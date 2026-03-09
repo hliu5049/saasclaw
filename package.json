@@ -1,0 +1,23 @@
+{
+  "name": "enterprise-openclaw",
+  "private": true,
+  "scripts": {
+    "dev:backend": "pnpm --filter @enterprise-openclaw/backend dev",
+    "dev:web": "pnpm --filter @enterprise-openclaw/web dev",
+    "dev": "pnpm -r dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma",
+      "sharp"
+    ]
+  }
+}
