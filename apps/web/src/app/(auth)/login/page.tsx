@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
-import { sendOtpAction, verifyOtpAction, type LoginState } from "./actions";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input }  from "@/components/ui/input";
 import { Label }  from "@/components/ui/label";
@@ -14,26 +14,59 @@ import {
 } from "@/components/ui/card";
 
 export default function LoginPage() {
-  const [sendState,   sendAction,   sendPending]   =
-    useActionState<LoginState, FormData>(sendOtpAction, null);
-  const [verifyState, verifyAction, verifyPending] =
-    useActionState<LoginState, FormData>(verifyOtpAction, null);
+  const router = useRouter();
 
-  // Track the current step and confirmed email in local state
-  const [step,  setStep]  = useState<"email" | "code">("email");
-  const [email, setEmail] = useState("");
+  const [step,    setStep]    = useState<"email" | "code">("email");
+  const [email,   setEmail]   = useState("");
+  const [code,    setCode]    = useState("");
+  const [error,   setError]   = useState("");
+  const [loading, setLoading] = useState(false);
 
-  // Advance to code step when send-otp succeeds
-  useEffect(() => {
-    if (sendState?.step === "verify" && sendState.email) {
-      setEmail(sendState.email);
-      setStep("code");
+  async function handleSendOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res  = await fetch("/api/auth/send-otp", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email }),
+      });
+      const data = (await res.json()) as { success: boolean; error?: string };
+      if (data.success) {
+        setStep("code");
+      } else {
+        setError(data.error ?? "发送失败，请重试");
+      }
+    } catch {
+      setError("无法连接到服务器，请稍后重试");
+    } finally {
+      setLoading(false);
     }
-  }, [sendState]);
+  }
 
-  const error = step === "code"
-    ? (verifyState?.error ?? (verifyState?.step === "verify" ? undefined : sendState?.error))
-    : sendState?.error;
+  async function handleVerifyOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res  = await fetch("/api/auth/verify-otp", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email, code }),
+      });
+      const data = (await res.json()) as { success: boolean; error?: string };
+      if (data.success) {
+        router.push("/dashboard");
+      } else {
+        setError(data.error ?? "验证码错误或已过期");
+      }
+    } catch {
+      setError("无法连接到服务器，请稍后重试");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-950 px-4">
@@ -50,13 +83,14 @@ export default function LoginPage() {
         <CardContent>
           {step === "email" ? (
             /* ── Step 1: enter email ───────────────────────────────── */
-            <form action={sendAction} className="space-y-4">
+            <form onSubmit={handleSendOtp} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-gray-300">邮箱</Label>
                 <Input
                   id="email"
-                  name="email"
                   type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   autoComplete="email"
                   required
@@ -68,17 +102,15 @@ export default function LoginPage() {
 
               <Button
                 type="submit"
-                disabled={sendPending}
+                disabled={loading}
                 className="w-full bg-gray-50 text-gray-950 hover:bg-gray-200"
               >
-                {sendPending ? "发送中…" : "获取验证码"}
+                {loading ? "发送中…" : "获取验证码"}
               </Button>
             </form>
           ) : (
             /* ── Step 2: enter OTP ─────────────────────────────────── */
-            <form action={verifyAction} className="space-y-4">
-              <input type="hidden" name="email" value={email} />
-
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
               <p className="text-sm text-gray-400">
                 验证码已发送至{" "}
                 <span className="font-medium text-gray-200">{email}</span>
@@ -88,9 +120,10 @@ export default function LoginPage() {
                 <Label htmlFor="code" className="text-gray-300">验证码</Label>
                 <Input
                   id="code"
-                  name="code"
                   type="text"
                   inputMode="numeric"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
                   placeholder="6 位数字"
                   maxLength={6}
                   autoComplete="one-time-code"
@@ -104,15 +137,15 @@ export default function LoginPage() {
 
               <Button
                 type="submit"
-                disabled={verifyPending}
+                disabled={loading}
                 className="w-full bg-gray-50 text-gray-950 hover:bg-gray-200"
               >
-                {verifyPending ? "验证中…" : "登录"}
+                {loading ? "验证中…" : "登录"}
               </Button>
 
               <button
                 type="button"
-                onClick={() => setStep("email")}
+                onClick={() => { setStep("email"); setError(""); setCode(""); }}
                 className="w-full text-sm text-gray-500 hover:text-gray-300 transition-colors"
               >
                 重新输入邮箱
