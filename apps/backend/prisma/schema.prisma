@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -5,4 +7,213 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ── 用户 ──────────────────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(MEMBER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agents    Agent[]
+  sessions  ChatSession[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+// ── Gateway 实例 ───────────────────────────────────────────
+model Gateway {
+  id          String        @id @default(cuid())
+  name        String
+  wsUrl       String        // ws://127.0.0.1:18789
+  token       String?       // Gateway auth token
+  status      GatewayStatus @default(ONLINE)
+  agentCount  Int           @default(0)
+  createdAt   DateTime      @default(now())
+
+  agents      Agent[]
+
+  @@map("gateways")
+}
+
+enum GatewayStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+}
+
+// ── Agent ─────────────────────────────────────────────────
+model Agent {
+  id            String      @id @default(cuid())
+  name          String
+  description   String?
+  soulMd        String      @default("") // SOUL.md 内容
+  agentsMd      String      @default("") // AGENTS.md 初始记忆
+  model         String      @default("anthropic/claude-opus-4-6")
+  status        AgentStatus @default(ACTIVE)
+  colorIdx      Int         @default(0)
+  workspacePath String      // 实际 workspace 路径
+
+  // 关联
+  gatewayId     String
+  gateway       Gateway     @relation(fields: [gatewayId], references: [id])
+  ownerId       String
+  owner         User        @relation(fields: [ownerId], references: [id])
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // 子配置
+  ragConfig     AgentRag?
+  mcpBindings   AgentMcp[]
+  skillBindings AgentSkill[]
+  channels      AgentChannel[]
+  sessions      ChatSession[]
+  documents     RagDocument[]
+
+  @@map("agents")
+}
+
+enum AgentStatus {
+  ACTIVE
+  PAUSED
+  DELETED
+}
+
+// ── RAG 配置 ───────────────────────────────────────────────
+model AgentRag {
+  id             String @id @default(cuid())
+  agentId        String @unique
+  agent          Agent  @relation(fields: [agentId], references: [id])
+  collectionName String // Qdrant collection，固定为 "agents"
+  namespace      String // 按 agentId 隔离：agent-{id}
+  embeddingModel String @default("text-embedding-3-small")
+  chunkSize      Int    @default(512)
+  chunkOverlap   Int    @default(64)
+
+  @@map("agent_rag")
+}
+
+// ── RAG 文档 ───────────────────────────────────────────────
+model RagDocument {
+  id         String          @id @default(cuid())
+  agentId    String
+  agent      Agent           @relation(fields: [agentId], references: [id])
+  filename   String
+  fileSize   Int
+  mimeType   String
+  status     DocumentStatus  @default(PROCESSING)
+  chunkCount Int             @default(0)
+  errorMsg   String?
+  createdAt  DateTime        @default(now())
+
+  @@map("rag_documents")
+}
+
+enum DocumentStatus {
+  PROCESSING
+  READY
+  FAILED
+}
+
+// ── MCP Server 全局注册表 ──────────────────────────────────
+model McpServer {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  endpoint    String     // MCP server HTTP/SSE endpoint
+  authType    String     @default("none") // none | bearer | basic
+  icon        String?
+  createdAt   DateTime   @default(now())
+
+  agentBindings AgentMcp[]
+
+  @@map("mcp_servers")
+}
+
+// ── Agent ↔ MCP 绑定 ──────────────────────────────────────
+model AgentMcp {
+  id           String    @id @default(cuid())
+  agentId      String
+  agent        Agent     @relation(fields: [agentId], references: [id])
+  mcpServerId  String
+  mcpServer    McpServer @relation(fields: [mcpServerId], references: [id])
+  authConfig   Json      @default("{}") // 加密存储的认证参数
+  toolsAllowed Json      @default("[]") // 允许调用的工具列表，[] = 全部
+
+  @@unique([agentId, mcpServerId])
+  @@map("agent_mcp")
+}
+
+// ── Skill 全局注册表 ──────────────────────────────────────
+model Skill {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  skillMd     String       // SKILL.md 内容
+  icon        String?
+  version     String       @default("1.0.0")
+  createdAt   DateTime     @default(now())
+
+  agentBindings AgentSkill[]
+
+  @@map("skills")
+}
+
+// ── Agent ↔ Skill 绑定 ────────────────────────────────────
+model AgentSkill {
+  id       String @id @default(cuid())
+  agentId  String
+  agent    Agent  @relation(fields: [agentId], references: [id])
+  skillId  String
+  skill    Skill  @relation(fields: [skillId], references: [id])
+  config   Json   @default("{}")
+
+  @@unique([agentId, skillId])
+  @@map("agent_skills")
+}
+
+// ── 渠道绑定 ───────────────────────────────────────────────
+model AgentChannel {
+  id            String      @id @default(cuid())
+  agentId       String
+  agent         Agent       @relation(fields: [agentId], references: [id])
+  channelType   ChannelType
+  channelConfig Json        @default("{}") // 渠道配置（加密）
+  enabled       Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+
+  @@unique([agentId, channelType])
+  @@map("agent_channels")
+}
+
+enum ChannelType {
+  WEBCHAT
+  WECOM
+  DINGTALK
+  FEISHU
+}
+
+// ── 会话记录 ───────────────────────────────────────────────
+model ChatSession {
+  id          String   @id @default(cuid())
+  agentId     String
+  agent       Agent    @relation(fields: [agentId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  channelType String   @default("webchat")
+  sessionKey  String   @unique // OpenClaw sessionKey
+  lastActive  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@map("chat_sessions")
 }

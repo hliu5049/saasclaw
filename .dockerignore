@@ -1,0 +1,37 @@
+# ── Version control ───────────────────────────────────────────────────────────
+.git
+.gitignore
+
+# ── Dependencies (rebuilt inside Docker) ──────────────────────────────────────
+**/node_modules
+**/.npm-cache
+**/.pnpm-store
+
+# ── Build artifacts ───────────────────────────────────────────────────────────
+apps/backend/dist
+apps/web/.next
+
+# ── Dev / local environment ───────────────────────────────────────────────────
+**/.env
+**/.env.local
+**/.env.*.local
+!**/.env.example
+
+# ── TypeScript incremental cache ──────────────────────────────────────────────
+**/*.tsbuildinfo
+**/.turbo
+
+# ── Logs & test output ────────────────────────────────────────────────────────
+**/coverage
+**/*.log
+
+# ── OS / editor artifacts ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+**/.idea
+**/.vscode
+
+# ── Docker itself ─────────────────────────────────────────────────────────────
+**/Dockerfile
+**/.dockerignore
+docker-compose*.yml
