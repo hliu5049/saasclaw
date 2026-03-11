@@ -91,13 +91,54 @@ export default async function authRoutes(app: FastifyInstance) {
       const { email, password } = req.body;
 
       const user = await prisma.user.findUnique({ where: { email } });
-      if (!user) {
+      if (!user || !user.password) {
         return reply.status(401).send({ success: false, error: "Invalid credentials" });
       }
 
       const match = await bcrypt.compare(password, user.password);
       if (!match) {
         return reply.status(401).send({ success: false, error: "Invalid credentials" });
+      }
+
+      const token = app.jwt.sign(
+        { sub: user.id, role: user.role } satisfies JwtPayload,
+        { expiresIn: "7d" },
+      );
+
+      return { success: true, data: { token, user: safeUser(user) } };
+    },
+  );
+
+  // ── POST /api/auth/google ──────────────────────────────────────────────
+  // Called by the Next.js OAuth callback after exchanging the Google code.
+  // Finds or creates a user by googleId (or by email if the account exists).
+
+  app.post<{ Body: { email: string; name: string; googleId: string } }>(
+    "/api/auth/google",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["email", "name", "googleId"],
+          properties: {
+            email:    { type: "string" },
+            name:     { type: "string" },
+            googleId: { type: "string" },
+          },
+        },
+      },
+    },
+    async (req, reply): Promise<ApiResponse> => {
+      const { email, name, googleId } = req.body;
+
+      let user = await prisma.user.findFirst({
+        where: { OR: [{ googleId }, { email }] },
+      });
+
+      if (!user) {
+        user = await prisma.user.create({ data: { email, name, googleId } });
+      } else if (!user.googleId) {
+        user = await prisma.user.update({ where: { id: user.id }, data: { googleId } });
       }
 
       const token = app.jwt.sign(

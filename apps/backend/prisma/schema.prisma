@@ -13,9 +13,10 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  password  String
+  password  String?  // nullable for OAuth-only accounts
   name      String
   role      UserRole @default(MEMBER)
+  googleId  String?  @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

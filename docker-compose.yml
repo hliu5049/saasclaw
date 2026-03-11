@@ -88,6 +88,9 @@ services:
       NODE_ENV: production
       PORT: "3000"
       BACKEND_URL: http://backend:3001
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APP_URL: ${APP_URL:-http://localhost:3000}
     depends_on:
       backend:
         condition: service_healthy
