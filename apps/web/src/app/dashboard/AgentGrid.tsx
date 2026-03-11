@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Bot, MessageSquare, FileText, Wrench, Cpu, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,7 @@ const COLOR_BG = [
 // ── Agent Card ─────────────────────────────────────────────────────────────────
 
 function AgentCard({ agent }: { agent: Agent }) {
+  const router = useRouter();
   const color = COLOR_BG[agent.colorIdx % COLOR_BG.length];
 
   const statusVariant =
@@ -95,13 +97,12 @@ function AgentCard({ agent }: { agent: Agent }) {
             </div>
 
             {/* Chat shortcut */}
-            <Link
-              href={`/dashboard/agents/${agent.id}/chat`}
-              onClick={e => e.stopPropagation()}
+            <button
+              onClick={e => { e.preventDefault(); router.push(`/dashboard/agents/${agent.id}/chat`); }}
               className="flex items-center gap-1 rounded-lg bg-blue-600/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-blue-500"
             >
               <MessageSquare className="h-3 w-3" /> 对话
-            </Link>
+            </button>
           </div>
         </div>
       </div>
