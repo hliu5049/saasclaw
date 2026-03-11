@@ -128,15 +128,16 @@ docker compose up -d postgres qdrant redis
 cp apps/backend/.env.example apps/backend/.env
 # 编辑 apps/backend/.env，至少设置 JWT_SECRET
 
-# 5. 初始化数据库
-cd apps/backend && pnpm exec prisma migrate deploy && cd ../..
+# 5. 生成 Prisma client 并初始化数据库
+pnpm --filter @enterprise-openclaw/backend exec prisma generate
+pnpm --filter @enterprise-openclaw/backend exec prisma migrate deploy
 
 # 6. 配置前端
 echo "BACKEND_URL=http://localhost:3001" > apps/web/.env.local
 
-# 7. 启动服务
+# 7. 启动服务（两个终端分别运行，或用 & 后台运行）
 PORT=3001 pnpm --filter @enterprise-openclaw/backend dev &
-pnpm --filter @enterprise-openclaw/web dev
+sleep 3 && pnpm --filter @enterprise-openclaw/web dev
 ```
 
 访问 **http://localhost:3000** 注册账号开始使用。

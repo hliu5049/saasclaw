@@ -116,10 +116,14 @@ OPENCLAW_WORKSPACE_ROOT=/tmp/openclaw-workspaces   # 或绝对路径
 ### 3.5 初始化数据库
 
 ```bash
-cd apps/backend
-pnpm exec prisma migrate deploy   # 应用迁移
-pnpm exec prisma db seed          # 可选：导入种子数据
-cd ../..
+# 生成 Prisma Client（首次克隆或 schema 变更后必须执行）
+pnpm --filter @enterprise-openclaw/backend exec prisma generate
+
+# 应用数据库迁移
+pnpm --filter @enterprise-openclaw/backend exec prisma migrate deploy
+
+# 可选：导入种子数据
+pnpm --filter @enterprise-openclaw/backend exec prisma db seed
 ```
 
 ### 3.6 配置前端环境变量
@@ -130,7 +134,13 @@ echo "BACKEND_URL=http://localhost:3001" > apps/web/.env.local
 
 ### 3.7 启动服务
 
-开两个终端分别运行：
+```bash
+# 后台启动后端，等待 3 秒再启动前端（确保 backend 先就绪）
+PORT=3001 pnpm --filter @enterprise-openclaw/backend dev &
+sleep 3 && pnpm --filter @enterprise-openclaw/web dev
+```
+
+或者开两个终端分别运行：
 
 ```bash
 # 终端 1：后端
@@ -411,6 +421,32 @@ docker compose restart backend
 3. 仅在 Docker/Linux 环境中执行 `pnpm build`（推荐用于生产构建）
 
 本地开发使用 `pnpm dev` 不受影响。
+
+---
+
+### Q: 启动后端报错 `@prisma/client did not initialize yet`
+
+**原因**：`pnpm install` 不会自动触发 `prisma generate`，Prisma Client 的原生查询引擎二进制文件未生成。
+
+**解决**：在启动服务前先执行一次生成命令：
+
+```bash
+pnpm --filter @enterprise-openclaw/backend exec prisma generate
+```
+
+> 凡是**首次克隆**、**切换机器**、**`prisma/schema.prisma` 有改动**、或 **`@prisma/client` 版本升级**后，都需要重新执行此命令。
+
+---
+
+### Q: Next.js 启动时警告 `inferred your workspace root` / `detected multiple lockfiles`
+
+**原因**：服务器 `$HOME` 目录（如 `/root`）存在无关的 `package-lock.json`，Next.js Turbopack 将其误识别为 monorepo 根目录。
+
+**解决**：删除该文件即可（它通常是 npm 全局操作留下的空文件，不影响任何项目）：
+
+```bash
+rm -f ~/package-lock.json
+```
 
 ---
 

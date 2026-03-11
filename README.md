@@ -128,15 +128,16 @@ docker compose up -d postgres qdrant redis
 cp apps/backend/.env.example apps/backend/.env
 # Edit apps/backend/.env — set JWT_SECRET at minimum
 
-# 5. Run database migrations
-cd apps/backend && pnpm exec prisma migrate deploy && cd ../..
+# 5. Generate Prisma client & run migrations
+pnpm --filter @enterprise-openclaw/backend exec prisma generate
+pnpm --filter @enterprise-openclaw/backend exec prisma migrate deploy
 
 # 6. Configure frontend
 echo "BACKEND_URL=http://localhost:3001" > apps/web/.env.local
 
-# 7. Start services
+# 7. Start services (two terminals, or use & for background)
 PORT=3001 pnpm --filter @enterprise-openclaw/backend dev &
-pnpm --filter @enterprise-openclaw/web dev
+sleep 3 && pnpm --filter @enterprise-openclaw/web dev
 ```
 
 Open **http://localhost:3000**, register an account, and start using the platform.
