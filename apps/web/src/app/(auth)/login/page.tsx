@@ -1,7 +1,10 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { useActionState, useEffect, useState } from "react";
+import { sendOtpAction, verifyOtpAction, type LoginState } from "./actions";
+import { Button } from "@/components/ui/button";
+import { Input }  from "@/components/ui/input";
+import { Label }  from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -10,40 +13,27 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-const ERROR_MESSAGES: Record<string, string> = {
-  oauth_cancelled:    "Google 登录已取消，请重试",
-  google_token_failed:"Google 授权失败，请重试",
-  google_no_email:    "无法获取 Google 邮箱，请确认已授予邮箱权限",
-  backend_failed:     "服务器错误，请稍后重试",
-};
+export default function LoginPage() {
+  const [sendState,   sendAction,   sendPending]   =
+    useActionState<LoginState, FormData>(sendOtpAction, null);
+  const [verifyState, verifyAction, verifyPending] =
+    useActionState<LoginState, FormData>(verifyOtpAction, null);
 
-function GoogleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-      <path
-        fill="#4285F4"
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-      />
-      <path
-        fill="#34A853"
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
-      />
-      <path
-        fill="#EA4335"
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-      />
-    </svg>
-  );
-}
+  // Track the current step and confirmed email in local state
+  const [step,  setStep]  = useState<"email" | "code">("email");
+  const [email, setEmail] = useState("");
 
-function LoginContent() {
-  const searchParams = useSearchParams();
-  const errorKey = searchParams.get("error") ?? "";
-  const errorMsg = ERROR_MESSAGES[errorKey] ?? null;
+  // Advance to code step when send-otp succeeds
+  useEffect(() => {
+    if (sendState?.step === "verify" && sendState.email) {
+      setEmail(sendState.email);
+      setStep("code");
+    }
+  }, [sendState]);
+
+  const error = step === "code"
+    ? (verifyState?.error ?? (verifyState?.step === "verify" ? undefined : sendState?.error))
+    : sendState?.error;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-950 px-4">
@@ -57,34 +47,80 @@ function LoginContent() {
           </CardDescription>
         </CardHeader>
 
-        <CardContent className="space-y-4">
-          {errorMsg && (
-            <p className="rounded-md bg-red-900/40 px-3 py-2 text-sm text-red-400">
-              {errorMsg}
-            </p>
+        <CardContent>
+          {step === "email" ? (
+            /* ── Step 1: enter email ───────────────────────────────── */
+            <form action={sendAction} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-gray-300">邮箱</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  required
+                  className="border-gray-700 bg-gray-800 text-gray-50 placeholder:text-gray-500 focus-visible:ring-gray-500"
+                />
+              </div>
+
+              {error && <p className="text-sm text-red-400">{error}</p>}
+
+              <Button
+                type="submit"
+                disabled={sendPending}
+                className="w-full bg-gray-50 text-gray-950 hover:bg-gray-200"
+              >
+                {sendPending ? "发送中…" : "获取验证码"}
+              </Button>
+            </form>
+          ) : (
+            /* ── Step 2: enter OTP ─────────────────────────────────── */
+            <form action={verifyAction} className="space-y-4">
+              <input type="hidden" name="email" value={email} />
+
+              <p className="text-sm text-gray-400">
+                验证码已发送至{" "}
+                <span className="font-medium text-gray-200">{email}</span>
+              </p>
+
+              <div className="space-y-2">
+                <Label htmlFor="code" className="text-gray-300">验证码</Label>
+                <Input
+                  id="code"
+                  name="code"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="6 位数字"
+                  maxLength={6}
+                  autoComplete="one-time-code"
+                  autoFocus
+                  required
+                  className="border-gray-700 bg-gray-800 text-gray-50 placeholder:text-gray-500 focus-visible:ring-gray-500 text-center tracking-[0.5em] text-lg"
+                />
+              </div>
+
+              {error && <p className="text-sm text-red-400">{error}</p>}
+
+              <Button
+                type="submit"
+                disabled={verifyPending}
+                className="w-full bg-gray-50 text-gray-950 hover:bg-gray-200"
+              >
+                {verifyPending ? "验证中…" : "登录"}
+              </Button>
+
+              <button
+                type="button"
+                onClick={() => setStep("email")}
+                className="w-full text-sm text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                重新输入邮箱
+              </button>
+            </form>
           )}
-
-          <a
-            href="/api/auth/google"
-            className="flex w-full items-center justify-center gap-3 rounded-md border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-50 transition-colors hover:bg-gray-700"
-          >
-            <GoogleIcon />
-            使用 Google 账号登录
-          </a>
-
-          <p className="text-center text-xs text-gray-500">
-            登录即表示同意使用条款和隐私政策
-          </p>
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-export default function LoginPage() {
-  return (
-    <Suspense>
-      <LoginContent />
-    </Suspense>
   );
 }

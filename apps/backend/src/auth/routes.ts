@@ -2,25 +2,14 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import bcrypt from "bcryptjs";
 import type { ApiResponse } from "@enterprise-openclaw/shared";
 import prisma from "../lib/prisma";
+import redis from "../lib/redis";
+import { sendOtpEmail } from "../lib/mailer";
 
 // ── JWT payload shape ──────────────────────────────────────────────────────
 
 export interface JwtPayload {
   sub: string;   // userId
   role: string;  // UserRole
-}
-
-// ── Route body types ───────────────────────────────────────────────────────
-
-interface RegisterBody {
-  email: string;
-  password: string;
-  name: string;
-}
-
-interface LoginBody {
-  email: string;
-  password: string;
 }
 
 // ── Safe user shape returned to clients ───────────────────────────────────
@@ -32,48 +21,91 @@ function safeUser(u: { id: string; email: string; name: string; role: string; cr
 // ── Plugin ────────────────────────────────────────────────────────────────
 
 export default async function authRoutes(app: FastifyInstance) {
-  // ── POST /api/auth/register ────────────────────────────────────────────
+  // ── POST /api/auth/send-otp ────────────────────────────────────────────
+  // Send a 6-digit OTP to the given email address (TTL: 5 minutes).
 
-  app.post<{ Body: RegisterBody }>(
-    "/api/auth/register",
+  app.post<{ Body: { email: string } }>(
+    "/api/auth/send-otp",
     {
       schema: {
         body: {
           type: "object",
-          required: ["email", "password", "name"],
+          required: ["email"],
+          properties: { email: { type: "string", format: "email" } },
+        },
+      },
+    },
+    async (req, reply): Promise<ApiResponse> => {
+      const { email } = req.body;
+
+      // Rate-limit: at most one OTP per 60 seconds
+      const ttl = await redis.ttl(`otp:${email}`);
+      if (ttl > 240) {   // was just issued (< 60 s ago means TTL still > 240)
+        return reply
+          .status(429)
+          .send({ success: false, error: "请稍后再试（60 秒内只能发送一次）" });
+      }
+
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      await redis.set(`otp:${email}`, code, "EX", 300);  // 5 min
+
+      try {
+        await sendOtpEmail(email, code);
+      } catch (err) {
+        app.log.error(err, "Failed to send OTP email");
+        return reply.status(500).send({ success: false, error: "邮件发送失败，请检查 SMTP 配置" });
+      }
+
+      return { success: true, data: { message: "验证码已发送" } };
+    },
+  );
+
+  // ── POST /api/auth/verify-otp ──────────────────────────────────────────
+  // Verify OTP, find-or-create user, return JWT.
+
+  app.post<{ Body: { email: string; code: string } }>(
+    "/api/auth/verify-otp",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["email", "code"],
           properties: {
-            email:    { type: "string", format: "email" },
-            password: { type: "string", minLength: 6 },
-            name:     { type: "string", minLength: 1 },
+            email: { type: "string" },
+            code:  { type: "string", minLength: 6, maxLength: 6 },
           },
         },
       },
     },
     async (req, reply): Promise<ApiResponse> => {
-      const { email, password, name } = req.body;
+      const { email, code } = req.body;
 
-      const existing = await prisma.user.findUnique({ where: { email } });
-      if (existing) {
-        return reply.status(409).send({ success: false, error: "Email already registered" });
+      const stored = await redis.get(`otp:${email}`);
+      if (!stored || stored !== code) {
+        return reply.status(401).send({ success: false, error: "验证码错误或已过期" });
       }
 
-      const hashed = await bcrypt.hash(password, 10);
-      const user = await prisma.user.create({
-        data: { email, password: hashed, name },
-      });
+      await redis.del(`otp:${email}`);
+
+      // Find or create user (first login auto-creates the account)
+      let user = await prisma.user.findUnique({ where: { email } });
+      if (!user) {
+        const name = email.split("@")[0];
+        user = await prisma.user.create({ data: { email, name } });
+      }
 
       const token = app.jwt.sign(
         { sub: user.id, role: user.role } satisfies JwtPayload,
         { expiresIn: "7d" },
       );
 
-      return reply.status(201).send({ success: true, data: { token, user: safeUser(user) } });
+      return { success: true, data: { token, user: safeUser(user) } };
     },
   );
 
-  // ── POST /api/auth/login ───────────────────────────────────────────────
+  // ── POST /api/auth/login (password fallback for admin accounts) ────────
 
-  app.post<{ Body: LoginBody }>(
+  app.post<{ Body: { email: string; password: string } }>(
     "/api/auth/login",
     {
       schema: {
@@ -98,47 +130,6 @@ export default async function authRoutes(app: FastifyInstance) {
       const match = await bcrypt.compare(password, user.password);
       if (!match) {
         return reply.status(401).send({ success: false, error: "Invalid credentials" });
-      }
-
-      const token = app.jwt.sign(
-        { sub: user.id, role: user.role } satisfies JwtPayload,
-        { expiresIn: "7d" },
-      );
-
-      return { success: true, data: { token, user: safeUser(user) } };
-    },
-  );
-
-  // ── POST /api/auth/google ──────────────────────────────────────────────
-  // Called by the Next.js OAuth callback after exchanging the Google code.
-  // Finds or creates a user by googleId (or by email if the account exists).
-
-  app.post<{ Body: { email: string; name: string; googleId: string } }>(
-    "/api/auth/google",
-    {
-      schema: {
-        body: {
-          type: "object",
-          required: ["email", "name", "googleId"],
-          properties: {
-            email:    { type: "string" },
-            name:     { type: "string" },
-            googleId: { type: "string" },
-          },
-        },
-      },
-    },
-    async (req, reply): Promise<ApiResponse> => {
-      const { email, name, googleId } = req.body;
-
-      let user = await prisma.user.findFirst({
-        where: { OR: [{ googleId }, { email }] },
-      });
-
-      if (!user) {
-        user = await prisma.user.create({ data: { email, name, googleId } });
-      } else if (!user.googleId) {
-        user = await prisma.user.update({ where: { id: user.id }, data: { googleId } });
       }
 
       const token = app.jwt.sign(

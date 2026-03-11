@@ -63,6 +63,12 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-ws://host.docker.internal:18789}
       OPENCLAW_WORKSPACE_ROOT: /var/openclaw/workspaces
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     volumes:
       - workspaces:/var/openclaw/workspaces
     depends_on:
