@@ -258,31 +258,50 @@ export class GatewayClientV2 extends EventEmitter {
   /** Send connect RPC with optional nonce from challenge */
   private _sendConnect(nonce: string | undefined): void {
     const signedAt = Date.now();
+    const token = this.token ?? "";
+    const clientId = "cli";
+    const clientMode = "cli";
+    const role = "operator";
+    const scopes = ["operator.read", "operator.write"];
     const publicKey = Buffer.from(this.keyPair.publicKey).toString("base64");
 
-    // Sign the nonce (or deviceId:timestamp if no challenge was received)
-    const message = nonce ?? `${this.deviceId}:${signedAt}`;
-    const messageBytes = new TextEncoder().encode(message);
-    const signatureBytes = nacl.sign.detached(messageBytes, this.keyPair.secretKey);
+    // Build v2 signature payload: pipe-delimited fields
+    // Format: v2|{deviceId}|{clientId}|{clientMode}|{role}|{scopes}|{signedAt}|{token}|{nonce}
+    const payloadParts = [
+      "v2",
+      this.deviceId,
+      clientId,
+      clientMode,
+      role,
+      scopes.join(","),
+      String(signedAt),
+      token,
+      nonce ?? "",
+    ];
+    const payload = payloadParts.join("|");
+    console.log("[GatewayClient] Signing payload:", payload);
+
+    const payloadBytes = new TextEncoder().encode(payload);
+    const signatureBytes = nacl.sign.detached(payloadBytes, this.keyPair.secretKey);
     const signature = Buffer.from(signatureBytes).toString("base64");
 
     const params: Record<string, unknown> = {
       minProtocol: 3,
       maxProtocol: 3,
       client: {
-        id: "cli",
+        id: clientId,
         version: "1.0.0",
         platform: "linux",
-        mode: "cli",
+        mode: clientMode,
       },
-      role: "operator",
-      scopes: ["operator.read", "operator.write"],
+      role,
+      scopes,
       caps: [],
       commands: [],
       permissions: {},
       locale: "en-US",
       userAgent: "enterprise-backend/1.0.0",
-      auth: { token: this.token ?? "" },
+      auth: { token },
       device: {
         id: this.deviceId,
         publicKey,
