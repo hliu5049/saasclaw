@@ -12,14 +12,17 @@ export async function POST(req: NextRequest) {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ email, code }),
+      signal:  AbortSignal.timeout(15_000),
     });
     data = (await res.json()) as typeof data;
     if (!data.success) {
       return NextResponse.json(data, { status: res.status });
     }
-  } catch {
+  } catch (err) {
+    const isTimeout = err instanceof Error && err.name === "TimeoutError";
+    console.error("[verify-otp] fetch failed:", err);
     return NextResponse.json(
-      { success: false, error: "无法连接到服务器" },
+      { success: false, error: isTimeout ? "后端响应超时，请检查服务是否正常" : "无法连接到服务器" },
       { status: 500 },
     );
   }
