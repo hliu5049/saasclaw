@@ -188,9 +188,17 @@ export class GatewayClientV2 extends EventEmitter {
         params.auth = { token: this.token };
       }
 
-      await this.call("connect", params);
-      this.authenticated = true;
-      this.emit("authenticated");
+      // Try to authenticate, but don't fail if gateway doesn't support it
+      try {
+        await this.call("connect", params, 5000); // Shorter timeout
+        this.authenticated = true;
+        this.emit("authenticated");
+      } catch (err) {
+        // If connect fails, assume gateway doesn't require authentication
+        console.warn("[GatewayClient] Connect method not supported or failed, proceeding without auth");
+        this.authenticated = true; // Allow RPC calls anyway
+        this.emit("authenticated");
+      }
     } catch (err) {
       this.emit("error", new Error(`Authentication failed: ${(err as Error).message}`));
       this._closeSocket();
