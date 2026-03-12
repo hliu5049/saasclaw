@@ -5,14 +5,14 @@ import WebSocket from "ws";
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
-  id: string | number;
+  id: string;
   method: string;
   params?: Record<string, unknown>;
 }
 
 interface JsonRpcResponse {
   id: string | number;
-  ok: boolean;
+  ok?: boolean;
   payload?: unknown;
   error?: { code: string; message: string } | null;
 }
@@ -54,11 +54,12 @@ export class GatewayClientV2 extends EventEmitter {
   private readonly reconnectDelay: number;
 
   private ws: WebSocket | null = null;
-  private pending = new Map<string | number, Pending>();
+  private pending = new Map<string, Pending>();
   private seq = 0;
   private destroyed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private authenticated = false;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(opts: GatewayClientOptions) {
     super();
@@ -90,6 +91,11 @@ export class GatewayClientV2 extends EventEmitter {
   ): Promise<T> {
     if (!this.authenticated && method !== "connect") {
       throw new Error("Not authenticated - call connect() first");
+    }
+
+    // Fail fast if WebSocket is not open
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error(`WebSocket not connected (method: ${method})`);
     }
 
     const id = this._nextId();
@@ -163,6 +169,10 @@ export class GatewayClientV2 extends EventEmitter {
   }
 
   private _closeSocket(): void {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
     if (!this.ws) return;
     this.ws.removeAllListeners();
     try {
@@ -172,6 +182,8 @@ export class GatewayClientV2 extends EventEmitter {
     }
     this.ws = null;
     this.authenticated = false;
+    // Reject all pending RPCs immediately — they will never get a response
+    this._rejectAllPending(new Error("WebSocket closed"));
   }
 
   // ── Authentication (OpenClaw connect method) ───────────────────────────
@@ -179,6 +191,13 @@ export class GatewayClientV2 extends EventEmitter {
   private async _onOpen(): Promise<void> {
     this.emit("connected");
     console.log("[GatewayClient] WebSocket connected, sending connect RPC...");
+
+    // Start WebSocket-level ping to keep connection alive
+    this.pingTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.ping();
+      }
+    }, 30_000);
 
     try {
       // OpenClaw requires a 'connect' call for authentication
@@ -197,18 +216,25 @@ export class GatewayClientV2 extends EventEmitter {
 
       console.log("[GatewayClient] Sending connect with params:", JSON.stringify(params));
 
-      // Try to authenticate, but don't fail if gateway doesn't support it
       try {
-        const result = await this.call("connect", params, 5000); // Shorter timeout
+        const result = await this.call("connect", params, 5000);
         console.log("[GatewayClient] Connect successful:", result);
         this.authenticated = true;
         this.emit("authenticated");
       } catch (err) {
-        // If connect fails, assume gateway doesn't require authentication
-        console.warn("[GatewayClient] Connect method failed:", (err as Error).message);
-        console.warn("[GatewayClient] Proceeding without authentication");
-        this.authenticated = true; // Allow RPC calls anyway
-        this.emit("authenticated");
+        const msg = (err as Error).message;
+        // Timeout = gateway might not require auth, proceed anyway
+        // Explicit rejection = real auth failure, still connect but warn loudly
+        if (msg.includes("timeout") || msg.includes("WebSocket")) {
+          console.warn("[GatewayClient] Connect timed out, proceeding without auth");
+          this.authenticated = true;
+          this.emit("authenticated");
+        } else {
+          console.error("[GatewayClient] Connect rejected by gateway:", msg);
+          // Still allow RPCs — some gateways reject connect but accept other methods
+          this.authenticated = true;
+          this.emit("authenticated");
+        }
       }
     } catch (err) {
       this.emit("error", new Error(`Authentication failed: ${(err as Error).message}`));
@@ -219,55 +245,84 @@ export class GatewayClientV2 extends EventEmitter {
   // ── Message dispatch ───────────────────────────────────────────────────
 
   private _onMessage(raw: WebSocket.RawData): void {
-    let msg: WireMessage;
+    let msg: Record<string, unknown>;
     try {
-      msg = JSON.parse(raw.toString()) as WireMessage;
+      msg = JSON.parse(raw.toString()) as Record<string, unknown>;
       console.log("[GatewayClient] Received message:", JSON.stringify(msg).substring(0, 200));
     } catch {
       console.warn("[GatewayClient] Failed to parse message:", raw.toString().substring(0, 100));
       return; // ignore malformed frames
     }
 
-    // Check if it's an event or a response
-    if ("event" in msg) {
-      this._handleEvent(msg);
-    } else if ("id" in msg) {
-      this._handleResponse(msg);
+    // Event frame: { event: "...", payload: ... }
+    if ("event" in msg && typeof msg.event === "string") {
+      this._handleEvent(msg as unknown as GatewayEvent);
+    }
+    // JSON-RPC response: { id: ..., ok: ..., payload: ... }
+    else if ("id" in msg) {
+      this._handleResponse(msg as unknown as JsonRpcResponse);
+    }
+    // JSON-RPC notification: { jsonrpc: "2.0", method: "...", params: ... } (no id)
+    else if ("method" in msg && typeof msg.method === "string") {
+      this._handleNotification(msg.method, (msg.params ?? {}) as Record<string, unknown>);
     }
   }
 
   private _handleResponse(msg: JsonRpcResponse): void {
-    const entry = this.pending.get(msg.id);
+    // Coerce id to string for consistent Map lookup (gateway may return "1" vs 1)
+    const id = String(msg.id);
+    const entry = this.pending.get(id);
     if (!entry) return;
 
     clearTimeout(entry.timer);
-    this.pending.delete(msg.id);
+    this.pending.delete(id);
 
-    if (!msg.ok && msg.error) {
+    if (msg.ok === false && msg.error) {
       entry.reject(
         Object.assign(new Error(msg.error.message), { code: msg.error.code }),
       );
+    } else if ("result" in msg) {
+      // Standard JSON-RPC 2.0 response format: { id, result, error }
+      entry.resolve((msg as unknown as Record<string, unknown>).result);
     } else {
+      // OpenClaw custom format: { id, ok, payload }
       entry.resolve(msg.payload);
     }
   }
 
   private _handleEvent(msg: GatewayEvent): void {
-    // Forward agent events to subscribers
     if (msg.event === "agent") {
       this.emit("agent-event", msg.payload);
-    } else if (msg.event === "tick") {
-      // Heartbeat - ignore or log
+    } else if (msg.event === "tick" || msg.event === "heartbeat") {
+      // Respond to heartbeat to keep connection alive
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ event: "pong", payload: { ts: Date.now() } }));
+      }
     } else {
       this.emit("event", msg.event, msg.payload);
+    }
+  }
+
+  /** Handle JSON-RPC 2.0 notifications (server → client, no id) */
+  private _handleNotification(method: string, params: Record<string, unknown>): void {
+    if (method === "agent.event" || method === "agent") {
+      this.emit("agent-event", params);
+    } else {
+      this.emit("event", method, params);
     }
   }
 
   // ── Reconnect ──────────────────────────────────────────────────────────
 
   private _onClose(): void {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
     this.ws = null;
     this.authenticated = false;
+    // Reject all pending RPCs — the old socket is gone
+    this._rejectAllPending(new Error("WebSocket disconnected"));
     this.emit("disconnected");
 
     if (this.destroyed) return;
@@ -284,11 +339,13 @@ export class GatewayClientV2 extends EventEmitter {
   private _send(msg: JsonRpcRequest): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
+    } else {
+      console.warn(`[GatewayClient] _send: WebSocket not open, dropping ${msg.method}`);
     }
   }
 
-  private _nextId(): number {
-    return ++this.seq;
+  private _nextId(): string {
+    return `${Date.now()}-${++this.seq}`;
   }
 
   private _rejectAllPending(err: Error): void {
