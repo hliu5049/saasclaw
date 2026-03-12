@@ -28,6 +28,9 @@ RUN pnpm --filter @enterprise-openclaw/shared build
 # Build Next.js (output: standalone is set in next.config.ts)
 # NEXT_TELEMETRY_DISABLED suppresses the data-collection prompt
 ENV NEXT_TELEMETRY_DISABLED=1
+# BACKEND_URL is inlined by Next.js at build time — set it to Docker service name
+ARG BACKEND_URL=http://backend:3001
+ENV BACKEND_URL=$BACKEND_URL
 RUN pnpm --filter @enterprise-openclaw/web build
 
 
