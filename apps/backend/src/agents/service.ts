@@ -163,11 +163,8 @@ export class AgentService {
     // ── Steps 5-6: push config to gateway (non-fatal if gateway is offline) ──
 
     try {
-      const { config: currentConfig, hash } =
-        (await client.configGet(agent.id)) as ConfigGetResult;
-
+      // For a newly created agent, directly create the config instead of getting non-existent config
       const newConfig: Record<string, unknown> = {
-        ...currentConfig,
         agentId: agent.id,
         name: agent.name,
         model: agent.model,
@@ -183,7 +180,6 @@ export class AgentService {
           chunkSize: 512,
           chunkOverlap: 64,
         },
-        _hash: hash,
       };
 
       await client.configPatch(agent.id, newConfig);
