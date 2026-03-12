@@ -36,7 +36,7 @@ RUN pnpm --filter @enterprise-openclaw/backend build
 #    - resolves workspace:* → copies packages into node_modules
 #    - excludes devDependencies
 #    - prisma is now a prod dep, so it's included
-RUN pnpm deploy --filter @enterprise-openclaw/backend --prod /deploy
+RUN pnpm deploy --filter @enterprise-openclaw/backend --prod --legacy /deploy
 
 # 5. Re-run prisma generate inside the pruned folder so the native query
 #    engine binary is correct for the final alpine image
