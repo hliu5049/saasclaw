@@ -145,7 +145,13 @@ export class GatewayClientV2 extends EventEmitter {
   // ── Socket lifecycle ───────────────────────────────────────────────────
 
   private _openSocket(): void {
-    const ws = new WebSocket(this.url);
+    const ws = new WebSocket(this.url, {
+      headers: {
+        'User-Agent': 'Enterprise-Backend/1.0.0',
+        'Origin': 'http://localhost',
+      },
+      handshakeTimeout: 10000,
+    });
     this.ws = ws;
 
     ws.on("open", () => this._onOpen());
