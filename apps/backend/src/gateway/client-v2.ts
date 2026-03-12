@@ -172,6 +172,7 @@ export class GatewayClientV2 extends EventEmitter {
 
   private async _onOpen(): Promise<void> {
     this.emit("connected");
+    console.log("[GatewayClient] WebSocket connected, sending connect RPC...");
 
     try {
       // OpenClaw requires a 'connect' call for authentication
@@ -188,14 +189,18 @@ export class GatewayClientV2 extends EventEmitter {
         params.auth = { token: this.token };
       }
 
+      console.log("[GatewayClient] Sending connect with params:", JSON.stringify(params));
+
       // Try to authenticate, but don't fail if gateway doesn't support it
       try {
-        await this.call("connect", params, 5000); // Shorter timeout
+        const result = await this.call("connect", params, 5000); // Shorter timeout
+        console.log("[GatewayClient] Connect successful:", result);
         this.authenticated = true;
         this.emit("authenticated");
       } catch (err) {
         // If connect fails, assume gateway doesn't require authentication
-        console.warn("[GatewayClient] Connect method not supported or failed, proceeding without auth");
+        console.warn("[GatewayClient] Connect method failed:", (err as Error).message);
+        console.warn("[GatewayClient] Proceeding without authentication");
         this.authenticated = true; // Allow RPC calls anyway
         this.emit("authenticated");
       }
@@ -211,7 +216,9 @@ export class GatewayClientV2 extends EventEmitter {
     let msg: WireMessage;
     try {
       msg = JSON.parse(raw.toString()) as WireMessage;
+      console.log("[GatewayClient] Received message:", JSON.stringify(msg).substring(0, 200));
     } catch {
+      console.warn("[GatewayClient] Failed to parse message:", raw.toString().substring(0, 100));
       return; // ignore malformed frames
     }
 
