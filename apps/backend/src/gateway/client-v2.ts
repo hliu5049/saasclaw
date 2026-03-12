@@ -214,8 +214,11 @@ export class GatewayClientV2 extends EventEmitter {
   private _sendConnect(nonce: string | undefined): void {
     const params: Record<string, unknown> = {
       role: "control",
+      minProtocol: 1,
+      maxProtocol: 1,
       client: {
-        name: "Enterprise Backend",
+        id: "enterprise-backend",
+        mode: "control",
         version: "1.0.0",
         platform: "node",
       },
@@ -225,8 +228,9 @@ export class GatewayClientV2 extends EventEmitter {
       params.auth = { token: this.token };
     }
 
+    // nonce from challenge goes inside client, not at root
     if (nonce) {
-      params.nonce = nonce;
+      (params.client as Record<string, unknown>).nonce = nonce;
     }
 
     console.log("[GatewayClient] Sending connect RPC, nonce:", nonce ?? "(none)");
