@@ -250,9 +250,7 @@ export class GatewayClientV2 extends EventEmitter {
       },
     };
 
-    if (this.token) {
-      params.auth = { token: this.token };
-    }
+    params.auth = { token: this.token ?? "" };
 
     console.log("[GatewayClient] Sending connect RPC, nonce:", nonce ?? "(none)");
 
