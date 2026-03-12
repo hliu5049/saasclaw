@@ -2,9 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { Bot, MessageSquare, FileText, Wrench, Cpu, RefreshCw } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { MessageSquare, RefreshCw, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import CreateAgentWizard from "./CreateAgentWizard";
 
@@ -22,120 +20,189 @@ export interface Agent {
   _count: { sessions: number; documents: number; skillBindings: number; mcpBindings: number };
 }
 
-// ── Color palette (must be full class strings for Tailwind scanning) ───────────
-
-const COLOR_BG = [
-  "bg-blue-500",
-  "bg-violet-500",
-  "bg-emerald-500",
-  "bg-orange-500",
-  "bg-red-500",
-  "bg-pink-500",
-  "bg-cyan-500",
-  "bg-yellow-500",
-  "bg-slate-500",
-  "bg-indigo-500",
+// ── Color palette matching the reference design ────────────────────────────────
+const AGENT_COLORS = [
+  { bg: "#0F4C81", accent: "#4DA6FF" },
+  { bg: "#4A1942", accent: "#C77DFF" },
+  { bg: "#1A3C34", accent: "#4ECBA8" },
+  { bg: "#3D1C02", accent: "#FF8C42" },
+  { bg: "#1C1C3D", accent: "#7B9FFF" },
+  { bg: "#1e1b4b", accent: "#C77DFF" },
+  { bg: "#083344", accent: "#4ECBA8" },
+  { bg: "#431407", accent: "#FF8C42" },
+  { bg: "#1e293b", accent: "#7B9FFF" },
+  { bg: "#1e1b4b", accent: "#7B9FFF" },
 ] as const;
 
+const EMOJIS = ["🤖", "🧠", "⚡", "🔧", "💡", "🌟", "🎯", "🔬", "📊", "🚀"];
+
+// ── Inline badge (matching reference style) ────────────────────────────────────
+function StatBadge({
+  color,
+  children,
+}: {
+  color: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className="whitespace-nowrap rounded text-[11px] font-semibold"
+      style={{
+        background: color + "22",
+        color: color,
+        border: `1px solid ${color}44`,
+        padding: "1px 7px",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 // ── Agent Card ─────────────────────────────────────────────────────────────────
-
-function AgentCard({ agent }: { agent: Agent }) {
-  const router = useRouter();
-  const color = COLOR_BG[agent.colorIdx % COLOR_BG.length];
-
-  const statusVariant =
-    agent.status === "ACTIVE" ? "success" : agent.status === "PAUSED" ? "warning" : "muted";
-
-  const statusLabel =
-    agent.status === "ACTIVE" ? "运行中" : agent.status === "PAUSED" ? "已暂停" : "已删除";
-
+function AgentCard({
+  agent,
+  onClick,
+  onChat,
+}: {
+  agent: Agent;
+  onClick: () => void;
+  onChat: (e: React.MouseEvent) => void;
+}) {
+  const colorIdx = agent.colorIdx % AGENT_COLORS.length;
+  const color = AGENT_COLORS[colorIdx];
+  const emoji = EMOJIS[colorIdx % EMOJIS.length];
   const modelShort = agent.model.split("/").pop() ?? agent.model;
+  const isActive = agent.status === "ACTIVE";
 
   return (
-    <Link href={`/dashboard/agents/${agent.id}`} className="group relative flex flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-900 transition-all hover:border-gray-600 hover:shadow-lg hover:shadow-black/40">
-      {/* Color strip */}
-      <div className={cn("h-1 w-full", color)} />
-
-      {/* Card body */}
-      <div className="flex flex-1 flex-col gap-3 p-5">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg", color, "bg-opacity-20")}>
-              <Bot className={cn("h-4 w-4", color.replace("bg-", "text-"))} />
-            </div>
-            <h3 className="truncate font-semibold text-gray-50">{agent.name}</h3>
-          </div>
-          <Badge variant={statusVariant} className="flex-shrink-0 text-[11px]">
-            {statusLabel}
-          </Badge>
+    <div
+      onClick={onClick}
+      className="group cursor-pointer rounded-xl border p-5 transition-all duration-200"
+      style={{
+        background: "#111118",
+        borderColor: "#ffffff14",
+        position: "relative",
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLElement).style.borderColor = color.accent + "55";
+        (e.currentTarget as HTMLElement).style.boxShadow = `0 4px 24px ${color.accent}18`;
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.borderColor = "#ffffff14";
+        (e.currentTarget as HTMLElement).style.boxShadow = "none";
+      }}
+    >
+      {/* Header row: avatar + name + status */}
+      <div className="mb-[14px] flex items-start gap-[14px]">
+        {/* Avatar */}
+        <div
+          className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-xl text-[22px]"
+          style={{
+            background: color.bg,
+            border: `1px solid ${color.accent}33`,
+          }}
+        >
+          {emoji}
         </div>
 
-        {agent.description ? (
-          <p className="line-clamp-2 text-sm text-gray-400">{agent.description}</p>
-        ) : (
-          <p className="text-sm italic text-gray-600">暂无描述</p>
-        )}
-
-        <div className="mt-auto">
-          <p className="mb-3 text-[11px] text-gray-600">{modelShort}</p>
-
-          <div className="flex items-center justify-between">
-            {/* Stats */}
-            <div className="flex items-center gap-4 text-xs text-gray-500">
-              <span className="flex items-center gap-1">
-                <MessageSquare className="h-3.5 w-3.5" />
-                {agent._count.sessions}
-              </span>
-              <span className="flex items-center gap-1">
-                <FileText className="h-3.5 w-3.5" />
-                {agent._count.documents}
-              </span>
-              <span className="flex items-center gap-1">
-                <Wrench className="h-3.5 w-3.5" />
-                {agent._count.skillBindings + agent._count.mcpBindings}
-              </span>
-            </div>
-
-            {/* Chat shortcut */}
-            <button
-              onClick={e => { e.preventDefault(); router.push(`/dashboard/agents/${agent.id}/chat`); }}
-              className="flex items-center gap-1 rounded-lg bg-blue-600/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-blue-500"
-            >
-              <MessageSquare className="h-3 w-3" /> 对话
-            </button>
+        {/* Name + description */}
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 text-[15px] font-bold text-white">
+            {agent.name}
           </div>
+          <div
+            className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px]"
+            style={{ color: "#888" }}
+          >
+            {agent.description ?? "暂无描述"}
+          </div>
+        </div>
+
+        {/* Online / offline indicator */}
+        <div className="flex flex-shrink-0 items-center gap-[5px]">
+          <div
+            className="h-[7px] w-[7px] rounded-full"
+            style={{ background: isActive ? "#4ECBA8" : "#555" }}
+          />
+          <span
+            className="text-[11px]"
+            style={{ color: isActive ? "#4ECBA8" : "#555" }}
+          >
+            {isActive ? "在线" : "离线"}
+          </span>
         </div>
       </div>
-    </Link>
+
+      {/* Badges row */}
+      <div className="mb-[14px] flex flex-wrap gap-[6px]">
+        <StatBadge color="#4DA6FF">
+          📚 {agent._count.documents} 文档
+        </StatBadge>
+        <StatBadge color="#C77DFF">
+          🔧 {agent._count.mcpBindings} MCP
+        </StatBadge>
+        <StatBadge color="#4ECBA8">
+          ⭐ {agent._count.skillBindings} Skill
+        </StatBadge>
+      </div>
+
+      {/* Footer row: sessions + chat button */}
+      <div className="flex items-center justify-between">
+        <span className="text-[12px]" style={{ color: "#666" }}>
+          会话 {agent._count.sessions.toLocaleString()} 次
+        </span>
+        <button
+          onClick={onChat}
+          className="flex items-center gap-[6px] rounded-lg px-[16px] py-[7px] text-[13px] font-bold text-black transition-opacity hover:opacity-90"
+          style={{ background: color.accent }}
+        >
+          <MessageSquare className="h-[13px] w-[13px]" />
+          对话
+        </button>
+      </div>
+
+      {/* Model label */}
+      <div
+        className="mt-2 text-[11px]"
+        style={{ color: "#444" }}
+      >
+        {modelShort}
+      </div>
+    </div>
   );
 }
 
 // ── Skeleton ───────────────────────────────────────────────────────────────────
-
 function AgentCardSkeleton() {
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-900">
-      <div className="h-1 w-full bg-gray-800 animate-pulse" />
-      <div className="flex flex-1 flex-col gap-3 p-5">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-gray-800 animate-pulse" />
-          <div className="h-4 w-32 rounded bg-gray-800 animate-pulse" />
+    <div
+      className="animate-pulse rounded-xl border p-5"
+      style={{ background: "#111118", borderColor: "#ffffff14" }}
+    >
+      <div className="mb-4 flex items-start gap-3">
+        <div className="h-[46px] w-[46px] rounded-xl bg-[#1e1e2e]" />
+        <div className="flex-1 space-y-2">
+          <div className="h-4 w-32 rounded bg-[#1e1e2e]" />
+          <div className="h-3 w-48 rounded bg-[#1e1e2e]" />
         </div>
-        <div className="h-3 w-full rounded bg-gray-800 animate-pulse" />
-        <div className="h-3 w-2/3 rounded bg-gray-800 animate-pulse" />
-        <div className="flex gap-3 mt-auto pt-2">
-          <div className="h-3 w-8 rounded bg-gray-800 animate-pulse" />
-          <div className="h-3 w-8 rounded bg-gray-800 animate-pulse" />
-          <div className="h-3 w-8 rounded bg-gray-800 animate-pulse" />
-        </div>
+      </div>
+      <div className="mb-4 flex gap-2">
+        <div className="h-5 w-20 rounded bg-[#1e1e2e]" />
+        <div className="h-5 w-16 rounded bg-[#1e1e2e]" />
+        <div className="h-5 w-16 rounded bg-[#1e1e2e]" />
+      </div>
+      <div className="flex justify-between">
+        <div className="h-3 w-20 rounded bg-[#1e1e2e]" />
+        <div className="h-8 w-20 rounded-lg bg-[#1e1e2e]" />
       </div>
     </div>
   );
 }
 
 // ── Main Grid ──────────────────────────────────────────────────────────────────
-
 export default function AgentGrid() {
+  const router = useRouter();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -145,8 +212,15 @@ export default function AgentGrid() {
     setError("");
     try {
       const res = await fetch("/api/proxy/api/agents");
-      if (res.status === 401) { window.location.href = "/login"; return; }
-      const data = await res.json() as { success: boolean; data?: { agents: Agent[] }; error?: string };
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      const data = (await res.json()) as {
+        success: boolean;
+        data?: { agents: Agent[] };
+        error?: string;
+      };
       if (data.success) setAgents(data.data?.agents ?? []);
       else setError(data.error ?? "加载失败");
     } catch {
@@ -156,54 +230,100 @@ export default function AgentGrid() {
     }
   }, []);
 
-  useEffect(() => { fetchAgents(); }, [fetchAgents]);
+  useEffect(() => {
+    fetchAgents();
+  }, [fetchAgents]);
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6">
-      {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-50">Agent 工作台</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            管理您的 AI Agent，共 {agents.length} 个
-          </p>
+    <div
+      className="h-full overflow-y-auto"
+      style={{ background: "#080810" }}
+    >
+      <div className="p-6 md:p-8">
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-[22px] font-extrabold text-white">
+              Agent 工作台
+            </h1>
+            <p className="mt-1 text-[13px]" style={{ color: "#555" }}>
+              管理您的 AI Agent，共{" "}
+              <span style={{ color: "#888" }}>{agents.length}</span> 个
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={fetchAgents}
+              disabled={loading}
+              className={cn(
+                "flex items-center gap-[6px] rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors disabled:opacity-50 hover:border-[#ffffff30] hover:text-[#aaa]",
+              )}
+              style={{
+                borderColor: "#ffffff18",
+                color: "#666",
+                background: "transparent",
+              }}
+            >
+              <RefreshCw
+                className={cn("h-[14px] w-[14px]", loading && "animate-spin")}
+              />
+              刷新
+            </button>
+
+            <CreateAgentWizard onCreated={fetchAgents} />
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={fetchAgents}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-200 disabled:opacity-50"
+
+        {/* ── Error ──────────────────────────────────────────────────────── */}
+        {error && (
+          <div
+            className="mb-6 rounded-lg border px-4 py-3 text-[13px]"
+            style={{
+              borderColor: "#ff6b6b44",
+              background: "#ff6b6b11",
+              color: "#ff6b6b",
+            }}
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-            刷新
-          </button>
-          <CreateAgentWizard onCreated={fetchAgents} />
-        </div>
+            {error}
+          </div>
+        )}
+
+        {/* ── Grid ───────────────────────────────────────────────────────── */}
+        {loading ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <AgentCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : agents.length === 0 ? (
+          <div
+            className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20"
+            style={{ borderColor: "#ffffff18", background: "#111118" }}
+          >
+            <Cpu className="mb-4 h-12 w-12" style={{ color: "#333" }} />
+            <p className="text-[16px] font-medium" style={{ color: "#555" }}>
+              还没有 Agent
+            </p>
+            <p className="mt-1 text-[13px]" style={{ color: "#444" }}>
+              点击「新建 Agent」开始
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {agents.map((agent) => (
+              <AgentCard
+                key={agent.id}
+                agent={agent}
+                onClick={() => router.push(`/dashboard/agents/${agent.id}`)}
+                onChat={(e) => {
+                  e.stopPropagation();
+                  router.push(`/dashboard/agents/${agent.id}/chat`);
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* Error */}
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-          {error}
-        </div>
-      )}
-
-      {/* Grid */}
-      {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 6 }).map((_, i) => <AgentCardSkeleton key={i} />)}
-        </div>
-      ) : agents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-800 bg-gray-900/50 py-20">
-          <Cpu className="mb-4 h-12 w-12 text-gray-700" />
-          <p className="text-lg font-medium text-gray-500">还没有 Agent</p>
-          <p className="mt-1 text-sm text-gray-600">点击「新建 Agent」开始</p>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {agents.map((a) => <AgentCard key={a.id} agent={a} />)}
-        </div>
-      )}
     </div>
   );
 }

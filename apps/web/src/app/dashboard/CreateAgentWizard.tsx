@@ -454,7 +454,13 @@ function Step5Channels({ data, onChange }: { data: WizardData; onChange: (p: Par
 
 // ── Main wizard ───────────────────────────────────────────────────────────────
 
-export default function CreateAgentWizard({ onCreated }: { onCreated: () => void }) {
+export default function CreateAgentWizard({
+  onCreated,
+  trigger,
+}: {
+  onCreated: () => void;
+  trigger?: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [data, setData] = useState<WizardData>(INITIAL_DATA);
@@ -574,10 +580,16 @@ export default function CreateAgentWizard({ onCreated }: { onCreated: () => void
 
   return (
     <>
-      <Button onClick={openWizard} className="gap-2 bg-blue-600 text-white hover:bg-blue-500">
-        <Plus className="h-4 w-4" />
-        新建 Agent
-      </Button>
+      {trigger ? (
+        <div onClick={openWizard} className="cursor-pointer">
+          {trigger}
+        </div>
+      ) : (
+        <Button onClick={openWizard} className="gap-2 bg-blue-600 text-white hover:bg-blue-500">
+          <Plus className="h-4 w-4" />
+          新建 Agent
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={o => { if (!submitting) setOpen(o); }}>
         <DialogContent className="flex max-h-[92vh] flex-col p-0">
