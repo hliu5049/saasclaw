@@ -181,7 +181,7 @@ export function useChat({
     // Optimistically append the user message
     setMessages(prev => [
       ...prev,
-      { id: crypto.randomUUID(), role: "user", content: trimmed, createdAt: new Date() },
+      { id: Math.random().toString(36).slice(2), role: "user", content: trimmed, createdAt: new Date() },
     ]);
 
     // Reset accumulator and enter streaming mode before the round-trip
