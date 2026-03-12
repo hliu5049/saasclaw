@@ -66,9 +66,26 @@ export default async function chatRoutes(app: FastifyInstance) {
         update: { lastActive: new Date() },
       });
 
-      await gwClient.chatSend(agentId, key, req.body.message);
-
-      return { success: true, data: { sessionKey: key, status: "sent" } };
+      try {
+        await gwClient.agentSend(req.body.message, key);
+        return { success: true, data: { sessionKey: key, status: "sent" } };
+      } catch (err) {
+        const error = err as Error;
+        app.log.error(`[Chat] Failed to send message to gateway: ${error.message}`);
+        
+        // Return a more helpful error message
+        if (error.message.includes("timeout")) {
+          return reply.status(504).send({ 
+            success: false, 
+            error: "Gateway timeout - the AI agent may not be configured properly or the gateway is overloaded" 
+          });
+        }
+        
+        return reply.status(500).send({ 
+          success: false, 
+          error: "Failed to send message to gateway" 
+        });
+      }
     },
   );
 
@@ -95,7 +112,7 @@ export default async function chatRoutes(app: FastifyInstance) {
       const key = sessionKey(agentId, userId);
 
       try {
-        const result = await gwClient.chatHistory(agentId, key, { limit });
+        const result = await gwClient.chatHistory(key, { limit });
         // Normalise to { messages: Array<{ role, content, ts? }> }
         const messages = Array.isArray(result) ? result : (result as { messages?: unknown[] }).messages ?? [];
         return { success: true, data: { messages } };

@@ -295,10 +295,10 @@ export default async function channelRoutes(app: FastifyInstance) {
       // ── 9. Background: send → wait for reply → push back to user ─────────
       setImmediate(async () => {
         try {
-          // Subscribe BEFORE chatSend so we don't miss early events
+          // Subscribe BEFORE agentSend so we don't miss early events
           const replyPromise = waitForAgentReply(sessionKey, 60_000);
 
-          await gwClient.chatSend(agentDbId, sessionKey, userMsg);
+          await gwClient.agentSend(userMsg, sessionKey);
 
           const replyText = await replyPromise;
 

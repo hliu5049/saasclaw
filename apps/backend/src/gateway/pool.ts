@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { GatewayClient } from "./client";
+import { GatewayClientV2 as GatewayClient } from "./client-v2";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -63,6 +63,16 @@ export class GatewayPool {
   /** Return the client for a specific gateway id, or undefined if not found. */
   get(gatewayId: string): GatewayClient | undefined {
     return this.entries.get(gatewayId)?.client;
+  }
+
+  /** Check if a gateway client exists and log its status */
+  getWithStatus(gatewayId: string): GatewayClient | undefined {
+    const entry = this.entries.get(gatewayId);
+    if (!entry) {
+      console.warn(`[GatewayPool] Gateway ${gatewayId} not found in pool`);
+      return undefined;
+    }
+    return entry.client;
   }
 
   /** Return the first-registered (default) gateway client. */
@@ -138,13 +148,31 @@ export class GatewayPool {
     agentCount: number;
   }): void {
     const client = new GatewayClient({
-      gatewayId: row.id,
       url: row.wsUrl,
       token: row.token ?? undefined,
     });
 
+    // Log connection events for debugging
+    client.on("connected", () => {
+      console.log(`[GatewayPool] Gateway ${row.id} connected to ${row.wsUrl}`);
+    });
+
+    client.on("authenticated", () => {
+      console.log(`[GatewayPool] Gateway ${row.id} authenticated successfully`);
+    });
+
+    client.on("disconnected", () => {
+      console.warn(`[GatewayPool] Gateway ${row.id} disconnected`);
+    });
+
+    client.on("reconnecting", () => {
+      console.log(`[GatewayPool] Gateway ${row.id} reconnecting...`);
+    });
+
     // Suppress unhandled-error crashes; reconnect is handled inside GatewayClient
-    client.on("error", () => { /* handled by GatewayClient reconnect */ });
+    client.on("error", (err) => {
+      console.error(`[GatewayPool] Gateway ${row.id} error:`, err);
+    });
 
     // Forward agent events to the matching session subscribers
     client.on("agent-event", (payload: unknown) => {
