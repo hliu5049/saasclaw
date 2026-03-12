@@ -2,7 +2,9 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import AgentDetailClient from "./AgentDetailClient";
 
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
+function getBackendUrl() {
+  return process.env.BACKEND_URL ?? "http://localhost:3001";
+}
 
 interface Agent {
   id: string;
@@ -25,7 +27,7 @@ export default async function AgentDetailPage({
   const cookieStore = await cookies();
   const token = cookieStore.get("token")?.value ?? "";
 
-  const res = await fetch(`${BACKEND_URL}/api/agents/${id}`, {
+  const res = await fetch(`${getBackendUrl()}/api/agents/${id}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });

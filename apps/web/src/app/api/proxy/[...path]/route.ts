@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
+function getBackendUrl() {
+  return process.env.BACKEND_URL ?? "http://localhost:3001";
+}
 
 async function handler(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
@@ -13,7 +15,7 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const url = new URL(backendPath, BACKEND_URL);
+  const url = new URL(backendPath, getBackendUrl());
   req.nextUrl.searchParams.forEach((v, k) => url.searchParams.set(k, v));
 
   // Use arrayBuffer to handle both JSON and multipart/form-data correctly

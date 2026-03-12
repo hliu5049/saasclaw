@@ -7,7 +7,9 @@
  *   cookie is forwarded automatically by the browser.
  */
 
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
+function getBackendUrl() {
+  return process.env.BACKEND_URL ?? "http://localhost:3001";
+}
 
 type FetchOptions = RequestInit & { token?: string };
 
@@ -23,7 +25,7 @@ export async function serverFetch<T>(
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${BACKEND_URL}${path}`, { ...rest, headers });
+  const res = await fetch(`${getBackendUrl()}${path}`, { ...rest, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`API ${res.status}: ${text}`);

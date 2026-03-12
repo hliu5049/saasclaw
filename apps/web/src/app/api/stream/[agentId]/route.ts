@@ -1,7 +1,9 @@
 import { type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
+function getBackendUrl() {
+  return process.env.BACKEND_URL ?? "http://localhost:3001";
+}
 
 /**
  * GET /api/stream/[agentId]
@@ -25,7 +27,7 @@ export async function GET(
   let backendRes: Response;
   try {
     backendRes = await fetch(
-      `${BACKEND_URL}/api/chat/${agentId}/stream?token=${encodeURIComponent(token)}`,
+      `${getBackendUrl()}/api/chat/${agentId}/stream?token=${encodeURIComponent(token)}`,
       {
         headers: { Accept: "text/event-stream" },
         // @ts-expect-error — Node 18 fetch supports this; prevents body buffering

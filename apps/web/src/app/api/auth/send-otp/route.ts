@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:3001";
+function getBackendUrl() {
+  return process.env.BACKEND_URL ?? "http://localhost:3001";
+}
 
 export async function POST(req: NextRequest) {
   const { email } = (await req.json()) as { email: string };
 
   try {
-    const res  = await fetch(`${BACKEND_URL}/api/auth/send-otp`, {
+    const res  = await fetch(`${getBackendUrl()}/api/auth/send-otp`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ email }),
