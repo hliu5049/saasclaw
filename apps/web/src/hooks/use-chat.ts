@@ -61,11 +61,16 @@ interface RawMessage {
   created_at?: string;
 }
 
+// Generate a random ID compatible with all browsers
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 function normaliseHistory(raw: unknown[]): Message[] {
   return raw.map((m) => {
     const r = m as RawMessage;
     return {
-      id:        crypto.randomUUID(),
+      id:        generateId(),
       role:      (r.role ?? "user") as Message["role"],
       content:   r.content ?? r.text ?? "",
       createdAt: r.ts
@@ -120,7 +125,7 @@ export function useChat({
         const { text, thinking } = acc.current;
         if (text || thinking) {
           const msg: Message = {
-            id:        crypto.randomUUID(),
+            id:        generateId(),
             role:      "assistant",
             content:   text,
             thinking:  thinking || undefined,
@@ -138,7 +143,7 @@ export function useChat({
 
       case "tool_start": {
         const tool: ActiveTool = {
-          id:        (event.data.tool_use_id as string) ?? crypto.randomUUID(),
+          id:        (event.data.tool_use_id as string) ?? generateId(),
           name:      (event.data.tool_name  as string) ?? "unknown",
           input:     event.data.input       as Record<string, unknown> | undefined,
           startedAt: new Date(),
@@ -181,7 +186,7 @@ export function useChat({
     // Optimistically append the user message
     setMessages(prev => [
       ...prev,
-      { id: Math.random().toString(36).slice(2), role: "user", content: trimmed, createdAt: new Date() },
+      { id: generateId(), role: "user", content: trimmed, createdAt: new Date() },
     ]);
 
     // Reset accumulator and enter streaming mode before the round-trip

@@ -15,6 +15,11 @@ interface PastedImage {
   dataUrl: string;
 }
 
+// Generate a random ID compatible with all browsers
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 function ImagePreview({
   image,
   onRemove,
@@ -123,7 +128,7 @@ export function InputBar({
         const dataUrl = ev.target?.result as string;
         setImages(prev => [
           ...prev,
-          { id: crypto.randomUUID(), file, dataUrl },
+          { id: generateId(), file, dataUrl },
         ]);
       };
       reader.readAsDataURL(file);
