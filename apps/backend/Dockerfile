@@ -12,7 +12,7 @@ RUN corepack enable
 WORKDIR /repo
 
 # Copy workspace manifests first — maximises layer cache hits on re-builds
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json          ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json          ./
 COPY apps/backend/package.json                                  apps/backend/
 COPY packages/shared/package.json                               packages/shared/
 
