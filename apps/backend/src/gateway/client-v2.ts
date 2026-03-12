@@ -212,25 +212,34 @@ export class GatewayClientV2 extends EventEmitter {
 
   /** Send connect RPC with optional nonce from challenge */
   private _sendConnect(nonce: string | undefined): void {
+    const deviceId = `enterprise-backend-${Date.now()}`;
     const params: Record<string, unknown> = {
-      role: "control",
-      minProtocol: 1,
-      maxProtocol: 1,
+      minProtocol: 3,
+      maxProtocol: 3,
       client: {
-        id: "enterprise-backend",
-        mode: "control",
+        id: "cli",
         version: "1.0.0",
-        platform: "node",
+        platform: "linux",
+        mode: "operator",
+      },
+      role: "operator",
+      scopes: ["operator.read", "operator.write"],
+      caps: [],
+      commands: [],
+      permissions: {},
+      locale: "en-US",
+      userAgent: "enterprise-backend/1.0.0",
+      device: {
+        id: deviceId,
+        publicKey: "",
+        signature: "",
+        signedAt: Date.now(),
+        nonce: nonce ?? "",
       },
     };
 
     if (this.token) {
       params.auth = { token: this.token };
-    }
-
-    // nonce from challenge goes inside client, not at root
-    if (nonce) {
-      (params.client as Record<string, unknown>).nonce = nonce;
     }
 
     console.log("[GatewayClient] Sending connect RPC, nonce:", nonce ?? "(none)");
