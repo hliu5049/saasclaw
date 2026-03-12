@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events";
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import WebSocket from "ws";
 import nacl from "tweetnacl";
 
@@ -45,6 +48,42 @@ export interface GatewayClientOptions {
   reconnectDelay?: number;
 }
 
+// ── Device identity helpers ──────────────────────────────────────────────
+
+/** Derive device fingerprint from Ed25519 public key (SHA-256 hex) */
+function deviceFingerprint(publicKey: Uint8Array): string {
+  return createHash("sha256").update(publicKey).digest("hex");
+}
+
+/** Load or create a persistent Ed25519 keypair */
+function loadOrCreateKeyPair(path?: string): nacl.SignKeyPair {
+  const keyPath = path ?? resolve(process.cwd(), "data", "device-key.json");
+  try {
+    const raw = readFileSync(keyPath, "utf-8");
+    const stored = JSON.parse(raw) as { publicKey: string; secretKey: string };
+    return {
+      publicKey: new Uint8Array(Buffer.from(stored.publicKey, "base64")),
+      secretKey: new Uint8Array(Buffer.from(stored.secretKey, "base64")),
+    };
+  } catch {
+    const kp = nacl.sign.keyPair();
+    try {
+      mkdirSync(dirname(keyPath), { recursive: true });
+      writeFileSync(
+        keyPath,
+        JSON.stringify({
+          publicKey: Buffer.from(kp.publicKey).toString("base64"),
+          secretKey: Buffer.from(kp.secretKey).toString("base64"),
+        }),
+      );
+      console.log("[GatewayClient] Created new device keypair at", keyPath);
+    } catch (writeErr) {
+      console.warn("[GatewayClient] Could not persist keypair:", writeErr);
+    }
+    return kp;
+  }
+}
+
 // ── GatewayClient (OpenClaw native protocol) ────────────────────────────
 
 export class GatewayClientV2 extends EventEmitter {
@@ -70,8 +109,9 @@ export class GatewayClientV2 extends EventEmitter {
     this.token = opts.token;
     this.rpcTimeout = opts.rpcTimeout ?? 30_000;
     this.reconnectDelay = opts.reconnectDelay ?? 5_000;
-    this.keyPair = nacl.sign.keyPair();
-    this.deviceId = `enterprise-backend-${Date.now()}`;
+    this.keyPair = loadOrCreateKeyPair();
+    this.deviceId = deviceFingerprint(this.keyPair.publicKey);
+    console.log("[GatewayClient] Device ID (pubkey fingerprint):", this.deviceId);
   }
 
   // ── Public API ─────────────────────────────────────────────────────────
@@ -217,12 +257,13 @@ export class GatewayClientV2 extends EventEmitter {
 
   /** Send connect RPC with optional nonce from challenge */
   private _sendConnect(nonce: string | undefined): void {
-    // Sign the nonce with Ed25519
     const signedAt = Date.now();
+    const publicKey = Buffer.from(this.keyPair.publicKey).toString("base64");
+
+    // Sign the nonce (or deviceId:timestamp if no challenge was received)
     const message = nonce ?? `${this.deviceId}:${signedAt}`;
     const messageBytes = new TextEncoder().encode(message);
     const signatureBytes = nacl.sign.detached(messageBytes, this.keyPair.secretKey);
-    const publicKey = Buffer.from(this.keyPair.publicKey).toString("base64");
     const signature = Buffer.from(signatureBytes).toString("base64");
 
     const params: Record<string, unknown> = {
@@ -241,6 +282,7 @@ export class GatewayClientV2 extends EventEmitter {
       permissions: {},
       locale: "en-US",
       userAgent: "enterprise-backend/1.0.0",
+      auth: { token: this.token ?? "" },
       device: {
         id: this.deviceId,
         publicKey,
@@ -250,9 +292,7 @@ export class GatewayClientV2 extends EventEmitter {
       },
     };
 
-    params.auth = { token: this.token ?? "" };
-
-    console.log("[GatewayClient] Sending connect RPC, nonce:", nonce ?? "(none)");
+    console.log("[GatewayClient] Sending connect RPC, deviceId:", this.deviceId, "nonce:", nonce ?? "(none)");
 
     this.call("connect", params, 10_000)
       .then((result) => {
