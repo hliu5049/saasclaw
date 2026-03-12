@@ -188,9 +188,11 @@ export class GatewayClientV2 extends EventEmitter {
 
   // ── Authentication (OpenClaw connect method) ───────────────────────────
 
-  private async _onOpen(): Promise<void> {
+  private _challengeTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  private _onOpen(): void {
     this.emit("connected");
-    console.log("[GatewayClient] WebSocket connected, sending connect RPC...");
+    console.log("[GatewayClient] WebSocket connected, waiting for challenge...");
 
     // Start WebSocket-level ping to keep connection alive
     this.pingTimer = setInterval(() => {
@@ -199,47 +201,47 @@ export class GatewayClientV2 extends EventEmitter {
       }
     }, 30_000);
 
-    try {
-      // OpenClaw requires a 'connect' call for authentication
-      const params: Record<string, unknown> = {
-        role: "control",
-        client: {
-          name: "Enterprise Backend",
-          version: "1.0.0",
-          platform: "node",
-        },
-      };
+    // OpenClaw sends connect.challenge first; respond after receiving the nonce.
+    // If no challenge arrives within 5s, attempt a direct connect RPC anyway.
+    this._challengeTimeout = setTimeout(() => {
+      this._challengeTimeout = null;
+      console.warn("[GatewayClient] No challenge received within 5s, attempting direct connect...");
+      this._sendConnect(undefined);
+    }, 5_000);
+  }
 
-      if (this.token) {
-        params.auth = { token: this.token };
-      }
+  /** Send connect RPC with optional nonce from challenge */
+  private _sendConnect(nonce: string | undefined): void {
+    const params: Record<string, unknown> = {
+      role: "control",
+      client: {
+        name: "Enterprise Backend",
+        version: "1.0.0",
+        platform: "node",
+      },
+    };
 
-      console.log("[GatewayClient] Sending connect with params:", JSON.stringify(params));
+    if (this.token) {
+      params.auth = { token: this.token };
+    }
 
-      try {
-        const result = await this.call("connect", params, 5000);
+    if (nonce) {
+      params.nonce = nonce;
+    }
+
+    console.log("[GatewayClient] Sending connect RPC, nonce:", nonce ?? "(none)");
+
+    this.call("connect", params, 10_000)
+      .then((result) => {
         console.log("[GatewayClient] Connect successful:", result);
         this.authenticated = true;
         this.emit("authenticated");
-      } catch (err) {
-        const msg = (err as Error).message;
-        // Timeout = gateway might not require auth, proceed anyway
-        // Explicit rejection = real auth failure, still connect but warn loudly
-        if (msg.includes("timeout") || msg.includes("WebSocket")) {
-          console.warn("[GatewayClient] Connect timed out, proceeding without auth");
-          this.authenticated = true;
-          this.emit("authenticated");
-        } else {
-          console.error("[GatewayClient] Connect rejected by gateway:", msg);
-          // Still allow RPCs — some gateways reject connect but accept other methods
-          this.authenticated = true;
-          this.emit("authenticated");
-        }
-      }
-    } catch (err) {
-      this.emit("error", new Error(`Authentication failed: ${(err as Error).message}`));
-      this._closeSocket();
-    }
+      })
+      .catch((err) => {
+        console.warn("[GatewayClient] Connect failed:", (err as Error).message, "— proceeding anyway");
+        this.authenticated = true;
+        this.emit("authenticated");
+      });
   }
 
   // ── Message dispatch ───────────────────────────────────────────────────
@@ -291,7 +293,16 @@ export class GatewayClientV2 extends EventEmitter {
   }
 
   private _handleEvent(msg: GatewayEvent): void {
-    if (msg.event === "agent") {
+    if (msg.event === "connect.challenge") {
+      // Gateway sends a nonce; reply with connect RPC including the nonce
+      if (this._challengeTimeout) {
+        clearTimeout(this._challengeTimeout);
+        this._challengeTimeout = null;
+      }
+      const nonce = (msg.payload as Record<string, unknown>)?.nonce as string | undefined;
+      console.log("[GatewayClient] Received connect.challenge, nonce:", nonce);
+      this._sendConnect(nonce);
+    } else if (msg.event === "agent") {
       this.emit("agent-event", msg.payload);
     } else if (msg.event === "tick" || msg.event === "heartbeat") {
       // Respond to heartbeat to keep connection alive
@@ -318,6 +329,10 @@ export class GatewayClientV2 extends EventEmitter {
     if (this.pingTimer) {
       clearInterval(this.pingTimer);
       this.pingTimer = null;
+    }
+    if (this._challengeTimeout) {
+      clearTimeout(this._challengeTimeout);
+      this._challengeTimeout = null;
     }
     this.ws = null;
     this.authenticated = false;
