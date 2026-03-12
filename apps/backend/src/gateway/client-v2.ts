@@ -1,30 +1,29 @@
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
 
-// ── JSON-RPC 2.0 Wire types (OpenClaw compatible) ─────────────────────────
+// ── Wire types (OpenClaw native protocol) ───────────────────────────────
 
-interface JsonRpcRequest {
-  jsonrpc: "2.0";
+interface RpcRequest {
+  type: "req";
   id: string;
   method: string;
-  params?: Record<string, unknown>;
+  params: Record<string, unknown>;
 }
 
-interface JsonRpcResponse {
-  id: string | number;
-  ok?: boolean;
-  payload?: unknown;
-  error?: { code: string; message: string } | null;
+interface RpcResponse {
+  type: "res";
+  id: string;
+  result?: unknown;
+  error?: { code: number | string; message: string };
 }
 
 interface GatewayEvent {
+  type: "event";
   event: string;
   payload: unknown;
 }
 
-type WireMessage = JsonRpcResponse | GatewayEvent;
-
-// ── Pending RPC entry ──────────────────────────────────────────────────────
+// ── Pending RPC entry ──────────────────────────────────────────────────
 
 interface Pending {
   resolve: (value: unknown) => void;
@@ -32,7 +31,7 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>;
 }
 
-// ── Constructor options ────────────────────────────────────────────────────
+// ── Constructor options ────────────────────────────────────────────────
 
 export interface GatewayClientOptions {
   /** Gateway ws URL, defaults to ws://127.0.0.1:18789 */
@@ -45,7 +44,7 @@ export interface GatewayClientOptions {
   reconnectDelay?: number;
 }
 
-// ── GatewayClient (OpenClaw JSON-RPC 2.0 compatible) ──────────────────────
+// ── GatewayClient (OpenClaw native protocol) ────────────────────────────
 
 export class GatewayClientV2 extends EventEmitter {
   private readonly url: string;
@@ -60,6 +59,7 @@ export class GatewayClientV2 extends EventEmitter {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private authenticated = false;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private _challengeTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(opts: GatewayClientOptions) {
     super();
@@ -83,7 +83,7 @@ export class GatewayClientV2 extends EventEmitter {
     this._rejectAllPending(new Error("GatewayClient destroyed"));
   }
 
-  /** Low-level JSON-RPC 2.0 call */
+  /** Low-level RPC call */
   async call<T = unknown>(
     method: string,
     params: Record<string, unknown> = {},
@@ -111,13 +111,13 @@ export class GatewayClientV2 extends EventEmitter {
         timer,
       });
 
-      this._send({ jsonrpc: "2.0", id, method, params });
+      this._send({ type: "req", id, method, params });
     });
   }
 
-  // ── Business methods (OpenClaw compatible) ─────────────────────────────
+  // ── Business methods ───────────────────────────────────────────────────
 
-  /** Send a message to an agent (OpenClaw 'agent' method) */
+  /** Send a message to an agent */
   async agentSend(
     message: string,
     sessionKey: string,
@@ -130,7 +130,7 @@ export class GatewayClientV2 extends EventEmitter {
     });
   }
 
-  /** Get chat history (if supported by gateway) */
+  /** Get chat history */
   async chatHistory(
     sessionKey: string,
     opts: { limit?: number } = {},
@@ -153,8 +153,8 @@ export class GatewayClientV2 extends EventEmitter {
   private _openSocket(): void {
     const ws = new WebSocket(this.url, {
       headers: {
-        'User-Agent': 'Enterprise-Backend/1.0.0',
-        'Origin': 'http://localhost',
+        "User-Agent": "Enterprise-Backend/1.0.0",
+        "Origin": "http://localhost",
       },
       handshakeTimeout: 10000,
     });
@@ -173,6 +173,10 @@ export class GatewayClientV2 extends EventEmitter {
       clearInterval(this.pingTimer);
       this.pingTimer = null;
     }
+    if (this._challengeTimeout) {
+      clearTimeout(this._challengeTimeout);
+      this._challengeTimeout = null;
+    }
     if (!this.ws) return;
     this.ws.removeAllListeners();
     try {
@@ -182,27 +186,23 @@ export class GatewayClientV2 extends EventEmitter {
     }
     this.ws = null;
     this.authenticated = false;
-    // Reject all pending RPCs immediately — they will never get a response
     this._rejectAllPending(new Error("WebSocket closed"));
   }
 
-  // ── Authentication (OpenClaw connect method) ───────────────────────────
-
-  private _challengeTimeout: ReturnType<typeof setTimeout> | null = null;
+  // ── Authentication ─────────────────────────────────────────────────────
 
   private _onOpen(): void {
     this.emit("connected");
     console.log("[GatewayClient] WebSocket connected, waiting for challenge...");
 
-    // Start WebSocket-level ping to keep connection alive
+    // WebSocket-level ping to keep connection alive
     this.pingTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.ping();
       }
     }, 30_000);
 
-    // OpenClaw sends connect.challenge first; respond after receiving the nonce.
-    // If no challenge arrives within 5s, attempt a direct connect RPC anyway.
+    // Wait for connect.challenge event; fallback to direct connect after 5s
     this._challengeTimeout = setTimeout(() => {
       this._challengeTimeout = null;
       console.warn("[GatewayClient] No challenge received within 5s, attempting direct connect...");
@@ -250,28 +250,20 @@ export class GatewayClientV2 extends EventEmitter {
     let msg: Record<string, unknown>;
     try {
       msg = JSON.parse(raw.toString()) as Record<string, unknown>;
-      console.log("[GatewayClient] Received message:", JSON.stringify(msg).substring(0, 200));
+      console.log("[GatewayClient] Received:", JSON.stringify(msg).substring(0, 200));
     } catch {
-      console.warn("[GatewayClient] Failed to parse message:", raw.toString().substring(0, 100));
-      return; // ignore malformed frames
+      console.warn("[GatewayClient] Failed to parse:", raw.toString().substring(0, 100));
+      return;
     }
 
-    // Event frame: { event: "...", payload: ... }
-    if ("event" in msg && typeof msg.event === "string") {
+    if (msg.type === "res") {
+      this._handleResponse(msg as unknown as RpcResponse);
+    } else if (msg.type === "event" || ("event" in msg && typeof msg.event === "string")) {
       this._handleEvent(msg as unknown as GatewayEvent);
-    }
-    // JSON-RPC response: { id: ..., ok: ..., payload: ... }
-    else if ("id" in msg) {
-      this._handleResponse(msg as unknown as JsonRpcResponse);
-    }
-    // JSON-RPC notification: { jsonrpc: "2.0", method: "...", params: ... } (no id)
-    else if ("method" in msg && typeof msg.method === "string") {
-      this._handleNotification(msg.method, (msg.params ?? {}) as Record<string, unknown>);
     }
   }
 
-  private _handleResponse(msg: JsonRpcResponse): void {
-    // Coerce id to string for consistent Map lookup (gateway may return "1" vs 1)
+  private _handleResponse(msg: RpcResponse): void {
     const id = String(msg.id);
     const entry = this.pending.get(id);
     if (!entry) return;
@@ -279,22 +271,19 @@ export class GatewayClientV2 extends EventEmitter {
     clearTimeout(entry.timer);
     this.pending.delete(id);
 
-    if (msg.ok === false && msg.error) {
+    if (msg.error) {
       entry.reject(
         Object.assign(new Error(msg.error.message), { code: msg.error.code }),
       );
-    } else if ("result" in msg) {
-      // Standard JSON-RPC 2.0 response format: { id, result, error }
-      entry.resolve((msg as unknown as Record<string, unknown>).result);
     } else {
-      // OpenClaw custom format: { id, ok, payload }
-      entry.resolve(msg.payload);
+      entry.resolve(msg.result);
     }
   }
 
   private _handleEvent(msg: GatewayEvent): void {
-    if (msg.event === "connect.challenge") {
-      // Gateway sends a nonce; reply with connect RPC including the nonce
+    const eventName = msg.event ?? (msg as Record<string, unknown>).event;
+
+    if (eventName === "connect.challenge") {
       if (this._challengeTimeout) {
         clearTimeout(this._challengeTimeout);
         this._challengeTimeout = null;
@@ -302,24 +291,15 @@ export class GatewayClientV2 extends EventEmitter {
       const nonce = (msg.payload as Record<string, unknown>)?.nonce as string | undefined;
       console.log("[GatewayClient] Received connect.challenge, nonce:", nonce);
       this._sendConnect(nonce);
-    } else if (msg.event === "agent") {
+    } else if (eventName === "agent") {
       this.emit("agent-event", msg.payload);
-    } else if (msg.event === "tick" || msg.event === "heartbeat") {
-      // Respond to heartbeat to keep connection alive
+    } else if (eventName === "tick" || eventName === "heartbeat") {
+      // Respond to heartbeat
       if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ event: "pong", payload: { ts: Date.now() } }));
+        this.ws.send(JSON.stringify({ type: "event", event: "pong", payload: { ts: Date.now() } }));
       }
     } else {
-      this.emit("event", msg.event, msg.payload);
-    }
-  }
-
-  /** Handle JSON-RPC 2.0 notifications (server → client, no id) */
-  private _handleNotification(method: string, params: Record<string, unknown>): void {
-    if (method === "agent.event" || method === "agent") {
-      this.emit("agent-event", params);
-    } else {
-      this.emit("event", method, params);
+      this.emit("event", eventName, msg.payload);
     }
   }
 
@@ -336,7 +316,6 @@ export class GatewayClientV2 extends EventEmitter {
     }
     this.ws = null;
     this.authenticated = false;
-    // Reject all pending RPCs — the old socket is gone
     this._rejectAllPending(new Error("WebSocket disconnected"));
     this.emit("disconnected");
 
@@ -351,9 +330,11 @@ export class GatewayClientV2 extends EventEmitter {
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
-  private _send(msg: JsonRpcRequest): void {
+  private _send(msg: RpcRequest): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
+      const payload = JSON.stringify(msg);
+      console.log("[GatewayClient] Sending:", payload.substring(0, 200));
+      this.ws.send(payload);
     } else {
       console.warn(`[GatewayClient] _send: WebSocket not open, dropping ${msg.method}`);
     }
