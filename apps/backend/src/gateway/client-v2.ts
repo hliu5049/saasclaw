@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
+import nacl from "tweetnacl";
 
 // ── Wire types (OpenClaw native protocol) ───────────────────────────────
 
@@ -60,6 +61,8 @@ export class GatewayClientV2 extends EventEmitter {
   private authenticated = false;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private _challengeTimeout: ReturnType<typeof setTimeout> | null = null;
+  private readonly keyPair: nacl.SignKeyPair;
+  private readonly deviceId: string;
 
   constructor(opts: GatewayClientOptions) {
     super();
@@ -67,6 +70,8 @@ export class GatewayClientV2 extends EventEmitter {
     this.token = opts.token;
     this.rpcTimeout = opts.rpcTimeout ?? 30_000;
     this.reconnectDelay = opts.reconnectDelay ?? 5_000;
+    this.keyPair = nacl.sign.keyPair();
+    this.deviceId = `enterprise-backend-${Date.now()}`;
   }
 
   // ── Public API ─────────────────────────────────────────────────────────
@@ -212,7 +217,14 @@ export class GatewayClientV2 extends EventEmitter {
 
   /** Send connect RPC with optional nonce from challenge */
   private _sendConnect(nonce: string | undefined): void {
-    const deviceId = `enterprise-backend-${Date.now()}`;
+    // Sign the nonce with Ed25519
+    const signedAt = Date.now();
+    const message = nonce ?? `${this.deviceId}:${signedAt}`;
+    const messageBytes = new TextEncoder().encode(message);
+    const signatureBytes = nacl.sign.detached(messageBytes, this.keyPair.secretKey);
+    const publicKey = Buffer.from(this.keyPair.publicKey).toString("base64");
+    const signature = Buffer.from(signatureBytes).toString("base64");
+
     const params: Record<string, unknown> = {
       minProtocol: 3,
       maxProtocol: 3,
@@ -220,7 +232,7 @@ export class GatewayClientV2 extends EventEmitter {
         id: "cli",
         version: "1.0.0",
         platform: "linux",
-        mode: "operator",
+        mode: "cli",
       },
       role: "operator",
       scopes: ["operator.read", "operator.write"],
@@ -230,10 +242,10 @@ export class GatewayClientV2 extends EventEmitter {
       locale: "en-US",
       userAgent: "enterprise-backend/1.0.0",
       device: {
-        id: deviceId,
-        publicKey: "",
-        signature: "",
-        signedAt: Date.now(),
+        id: this.deviceId,
+        publicKey,
+        signature,
+        signedAt,
         nonce: nonce ?? "",
       },
     };
