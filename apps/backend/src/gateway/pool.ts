@@ -43,13 +43,24 @@ export class GatewayPool {
    */
   async init(): Promise<void> {
     let rows = await this.prisma.gateway.findMany();
+    const envUrl = process.env.OPENCLAW_GATEWAY_URL ?? "ws://127.0.0.1:18789";
 
     if (rows.length === 0) {
-      const wsUrl = process.env.OPENCLAW_GATEWAY_URL ?? "ws://127.0.0.1:18789";
       const created = await this.prisma.gateway.create({
-        data: { name: "default", wsUrl, status: "ONLINE", agentCount: 0 },
+        data: { name: "default", wsUrl: envUrl, status: "ONLINE", agentCount: 0 },
       });
       rows = [created];
+    } else {
+      // Sync the default gateway URL with the env var so Docker network changes take effect
+      const defaultGw = rows.find((r) => r.name === "default");
+      if (defaultGw && defaultGw.wsUrl !== envUrl) {
+        console.log(`[GatewayPool] Updating default gateway URL: ${defaultGw.wsUrl} → ${envUrl}`);
+        await this.prisma.gateway.update({
+          where: { id: defaultGw.id },
+          data: { wsUrl: envUrl },
+        });
+        defaultGw.wsUrl = envUrl;
+      }
     }
 
     for (const row of rows) {
