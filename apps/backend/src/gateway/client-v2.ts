@@ -164,16 +164,17 @@ export class GatewayClientV2 extends EventEmitter {
 
   /** Send a message to an agent */
   async agentSend(
-    message: string,
-    sessionKey: string,
-    runId?: string,
-  ): Promise<unknown> {
-    return this.call("agent", {
-      message,
-      sessionKey,
-      runId: runId ?? `run-${Date.now()}`,
-    });
-  }
+      message: string,
+      sessionKey: string,
+      idempotencyKey?: string,
+    ): Promise<unknown> {
+      return this.call("agent", {
+        message,
+        sessionKey,
+        idempotencyKey: idempotencyKey ?? `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      });
+    }
+
 
   /** Get chat history */
   async chatHistory(
