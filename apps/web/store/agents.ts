@@ -7,6 +7,7 @@ export type Agent = {
   name: string
   description?: string
   soulMd: string
+  agentsMd?: string
   model: string
   status: "ACTIVE" | "PAUSED" | "DELETED"
   colorIdx: number
@@ -15,10 +16,16 @@ export type Agent = {
   ownerId: string
   createdAt: string
   updatedAt: string
+  gateway?: {
+    id: string
+    name: string
+    status: string
+  }
   _count?: {
     sessions: number
     mcpBindings: number
     skillBindings: number
+    documents: number
   }
 }
 
