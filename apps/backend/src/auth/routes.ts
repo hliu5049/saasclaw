@@ -141,6 +141,90 @@ export default async function authRoutes(app: FastifyInstance) {
     },
   );
 
+  // ── POST /api/auth/google ──────────────────────────────────────────────
+  // Google OAuth login - verify Google token and create/login user
+
+  app.post<{ Body: { credential: string } }>(
+    "/api/auth/google",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["credential"],
+          properties: {
+            credential: { type: "string" },
+          },
+        },
+      },
+    },
+    async (req, reply): Promise<ApiResponse> => {
+      const { credential } = req.body;
+
+      try {
+        // Verify Google token
+        const response = await fetch(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`
+        );
+        
+        if (!response.ok) {
+          return reply.status(401).send({ 
+            success: false, 
+            error: "Invalid Google token" 
+          });
+        }
+
+        const googleUser = await response.json();
+        const { sub: googleId, email, name } = googleUser;
+
+        if (!email) {
+          return reply.status(400).send({ 
+            success: false, 
+            error: "Email not provided by Google" 
+          });
+        }
+
+        // Find or create user
+        let user = await prisma.user.findUnique({ 
+          where: { email } 
+        });
+
+        if (!user) {
+          // Create new user with Google ID
+          user = await prisma.user.create({
+            data: {
+              email,
+              name: name || email.split("@")[0],
+              googleId,
+            },
+          });
+        } else if (!user.googleId) {
+          // Link Google ID to existing user
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: { googleId },
+          });
+        }
+
+        // Generate JWT
+        const token = app.jwt.sign(
+          { sub: user.id, role: user.role } satisfies JwtPayload,
+          { expiresIn: "7d" },
+        );
+
+        return { 
+          success: true, 
+          data: { token, user: safeUser(user) } 
+        };
+      } catch (err) {
+        app.log.error(err, "Google OAuth error");
+        return reply.status(500).send({ 
+          success: false, 
+          error: "Google authentication failed" 
+        });
+      }
+    },
+  );
+
   // ── GET /api/auth/me ───────────────────────────────────────────────────
 
   app.get(
