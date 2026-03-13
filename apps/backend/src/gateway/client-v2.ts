@@ -202,17 +202,23 @@ export class GatewayClientV2 extends EventEmitter {
 
   /** Update gateway configuration (JSON merge semantics).
    *  Fetches the current config hash first, then sends a config.patch RPC
-   *  with the raw JSON5 string + baseHash. */
+   *  with the raw JSON5 string + baseHash.
+   *  Falls back to config.apply when no config exists yet (no hash). */
   async configPatch(patch: Record<string, unknown>): Promise<unknown> {
     // Step 1: get current config hash
-    const current = (await this.call("config.get", {})) as { hash?: string };
-    const baseHash = current?.hash ?? "";
+    const current = (await this.call("config.get", {})) as {
+      hash?: string;
+      config?: unknown;
+    };
+    const baseHash = current?.hash;
+    const raw = JSON.stringify(patch);
 
-    // Step 2: send patch with raw JSON5 string
-    return this.call("config.patch", {
-      raw: JSON.stringify(patch),
-      baseHash,
-    });
+    if (baseHash) {
+      // Existing config — use config.patch for partial merge
+      return this.call("config.patch", { raw, baseHash });
+    }
+    // No config yet — use config.apply (baseHash optional for initial config)
+    return this.call("config.apply", { raw });
   }
 
   /** Get gateway configuration */
