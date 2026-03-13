@@ -70,6 +70,36 @@ class ApiClient {
   }
 
   // Auth endpoints
+  async sendOtp(email: string) {
+    return this.request<{ success: boolean; data: { message: string } }>(
+      "/api/auth/send-otp",
+      {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }
+    )
+  }
+
+  async verifyOtp(email: string, code: string) {
+    return this.request<{ success: boolean; data: { token: string; user: any } }>(
+      "/api/auth/verify-otp",
+      {
+        method: "POST",
+        body: JSON.stringify({ email, code }),
+      }
+    )
+  }
+
+  async login(email: string, password: string) {
+    return this.request<{ success: boolean; data: { token: string; user: any } }>(
+      "/api/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      }
+    )
+  }
+
   async googleLogin(credential: string) {
     return this.request<{ success: boolean; data: { token: string; user: any } }>(
       "/api/auth/google",
@@ -92,23 +122,32 @@ class ApiClient {
   }
 
   async createModel(model: any) {
-    return this.request("/api/llm-providers", {
+    return this.request<any>("/api/llm-providers", {
       method: "POST",
       body: JSON.stringify(model),
     })
   }
 
   async updateModel(id: string, model: any) {
-    return this.request(`/api/llm-providers/${id}`, {
+    return this.request<any>(`/api/llm-providers/${id}`, {
       method: "PUT",
       body: JSON.stringify(model),
     })
   }
 
   async deleteModel(id: string) {
-    return this.request(`/api/llm-providers/${id}`, {
+    return this.request<{ success: true }>(`/api/llm-providers/${id}`, {
       method: "DELETE",
     })
+  }
+
+  async testModel(id: string) {
+    return this.request<{ success: true; message: string }>(
+      `/api/llm-providers/${id}/test`,
+      {
+        method: "POST",
+      }
+    )
   }
 
   // Agents endpoints
@@ -130,7 +169,7 @@ class ApiClient {
 
   async updateAgent(id: string, agent: any) {
     return this.request(`/api/agents/${id}`, {
-      method: "PUT",
+      method: "PATCH",
       body: JSON.stringify(agent),
     })
   }

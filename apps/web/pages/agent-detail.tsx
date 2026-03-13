@@ -1,14 +1,13 @@
 import * as React from "react"
 import { useState, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { toast } from "sonner"
 import { useAgents } from "@/store/agents"
 import { useModels } from "@/store/models"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Select,
@@ -17,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ArrowLeft, Save, Bot, BrainCircuit, Database, Wrench, Network } from "lucide-react"
+import { ArrowLeft, Save, Bot } from "lucide-react"
 
 export function AgentDetail() {
   const { id } = useParams<{ id: string }>()
@@ -26,22 +25,29 @@ export function AgentDetail() {
   const { models } = useModels()
   
   const agent = agents.find(a => a.id === id)
-  const activeModels = models.filter((m) => m.status === "active")
+  const activeModels = models.filter((m) => m.enabled)
 
-  const [formData, setFormData] = useState(agent || {
-    id: "",
+  const [formData, setFormData] = useState({
     name: "",
-    persona: "",
-    prompt: "",
-    modelId: "",
-    status: "stopped" as const,
-    tasksExecuted: 0,
-    config: { mcp: false, skill: false, memory: false, rag: false },
+    description: "",
+    soulMd: "",
+    agentsMd: "",
+    model: "",
+    status: "ACTIVE" as const,
+    colorIdx: 0,
   })
 
   useEffect(() => {
     if (agent) {
-      setFormData(agent)
+      setFormData({
+        name: agent.name,
+        description: agent.description || "",
+        soulMd: agent.soulMd || "",
+        agentsMd: agent.agentsMd || "",
+        model: agent.model || "",
+        status: agent.status,
+        colorIdx: agent.colorIdx || 0,
+      })
     }
   }, [agent])
 
@@ -54,10 +60,15 @@ export function AgentDetail() {
     )
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (id) {
-      updateAgent(id, formData)
-      toast.success("Agent settings saved successfully")
+      try {
+        // Only send fields that backend supports in PATCH
+        const { status, ...updateData } = formData
+        await updateAgent(id, updateData)
+      } catch (error) {
+        // Error already handled in store
+      }
     }
   }
 
@@ -100,37 +111,50 @@ export function AgentDetail() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="persona">Persona</Label>
+                <Label htmlFor="description">Description</Label>
                 <Input
-                  id="persona"
-                  value={formData.persona}
-                  onChange={(e) => setFormData({ ...formData, persona: e.target.value })}
-                  placeholder="e.g. You are an expert data analyst."
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Brief description of the agent"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="prompt">System Prompt</Label>
+                <Label htmlFor="soulMd">SOUL.md (System Prompt)</Label>
                 <Textarea
-                  id="prompt"
+                  id="soulMd"
                   className="min-h-[150px]"
-                  value={formData.prompt}
-                  onChange={(e) => setFormData({ ...formData, prompt: e.target.value })}
-                  placeholder="Instructions for the agent..."
+                  value={formData.soulMd}
+                  onChange={(e) => setFormData({ ...formData, soulMd: e.target.value })}
+                  placeholder="# Role&#10;You are an expert data analyst...&#10;&#10;# Principles&#10;- Be helpful&#10;- Be concise"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="agentsMd">AGENTS.md (Initial Memory)</Label>
+                <Textarea
+                  id="agentsMd"
+                  className="min-h-[100px]"
+                  value={formData.agentsMd}
+                  onChange={(e) => setFormData({ ...formData, agentsMd: e.target.value })}
+                  placeholder="Long-term memory and context for the agent..."
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="model">Base Model</Label>
                 <Select
-                  value={formData.modelId}
-                  onValueChange={(val) => setFormData({ ...formData, modelId: val })}
+                  value={formData.model}
+                  onValueChange={(val) => setFormData({ ...formData, model: val })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a model" />
                   </SelectTrigger>
                   <SelectContent>
                     {activeModels.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
-                        {model.name}
+                      <SelectItem 
+                        key={model.id} 
+                        value={model.models[0] ? `${model.provider.toLowerCase()}/${model.models[0]}` : model.id}
+                      >
+                        {model.name} - {model.models[0] || "No models"}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -143,72 +167,20 @@ export function AgentDetail() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Capabilities</CardTitle>
-              <CardDescription>Enable advanced features for this agent.</CardDescription>
+              <CardTitle>Agent Status</CardTitle>
+              <CardDescription>Current status of this agent.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4">
               <div className="flex items-center justify-between space-x-2">
                 <div className="flex flex-col space-y-1">
-                  <Label className="flex items-center gap-2">
-                    <Database className="h-4 w-4 text-zinc-500" />
-                    RAG
-                  </Label>
-                  <span className="text-xs text-zinc-500">Retrieval-Augmented Generation</span>
+                  <Label>Status</Label>
+                  <span className="text-sm text-zinc-500">
+                    {formData.status === "ACTIVE" ? "Agent is running" : "Agent is paused"}
+                  </span>
                 </div>
-                <Switch
-                  checked={formData.config.rag}
-                  onCheckedChange={(checked) => 
-                    setFormData({ ...formData, config: { ...formData.config, rag: checked } })
-                  }
-                />
-              </div>
-              
-              <div className="flex items-center justify-between space-x-2">
-                <div className="flex flex-col space-y-1">
-                  <Label className="flex items-center gap-2">
-                    <Wrench className="h-4 w-4 text-zinc-500" />
-                    Skills
-                  </Label>
-                  <span className="text-xs text-zinc-500">Enable external tool usage</span>
-                </div>
-                <Switch
-                  checked={formData.config.skill}
-                  onCheckedChange={(checked) => 
-                    setFormData({ ...formData, config: { ...formData.config, skill: checked } })
-                  }
-                />
-              </div>
-
-              <div className="flex items-center justify-between space-x-2">
-                <div className="flex flex-col space-y-1">
-                  <Label className="flex items-center gap-2">
-                    <Network className="h-4 w-4 text-zinc-500" />
-                    MCP
-                  </Label>
-                  <span className="text-xs text-zinc-500">Model Context Protocol</span>
-                </div>
-                <Switch
-                  checked={formData.config.mcp}
-                  onCheckedChange={(checked) => 
-                    setFormData({ ...formData, config: { ...formData.config, mcp: checked } })
-                  }
-                />
-              </div>
-
-              <div className="flex items-center justify-between space-x-2">
-                <div className="flex flex-col space-y-1">
-                  <Label className="flex items-center gap-2">
-                    <BrainCircuit className="h-4 w-4 text-zinc-500" />
-                    Memory
-                  </Label>
-                  <span className="text-xs text-zinc-500">Long-term conversation memory</span>
-                </div>
-                <Switch
-                  checked={formData.config.memory}
-                  onCheckedChange={(checked) => 
-                    setFormData({ ...formData, config: { ...formData.config, memory: checked } })
-                  }
-                />
+                <Badge variant={formData.status === "ACTIVE" ? "success" : "secondary"}>
+                  {formData.status}
+                </Badge>
               </div>
             </CardContent>
           </Card>
