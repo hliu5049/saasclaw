@@ -24,7 +24,7 @@ export function Settings() {
             <CardHeader>
               <CardTitle>System Preferences</CardTitle>
               <CardDescription>
-                Customize how the AI Agent Manager behaves.
+                Customize how saasclaw behaves.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">

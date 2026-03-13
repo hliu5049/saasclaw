@@ -45,7 +45,7 @@ export function Layout() {
         <div className="flex h-14 items-center border-b border-zinc-200 px-6">
           <Link to="/" className="flex items-center gap-2 font-semibold">
             <Bot className="h-6 w-6" />
-            <span>AI Agent Manager</span>
+            <span>saasclaw</span>
           </Link>
         </div>
         <nav className="flex-1 overflow-auto py-4">

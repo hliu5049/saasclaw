@@ -156,7 +156,7 @@ export function Login() {
             <Bot className="h-8 w-8 text-white" />
           </div>
           <div>
-            <CardTitle className="text-2xl">AI Agent Manager</CardTitle>
+            <CardTitle className="text-2xl">saasclaw</CardTitle>
             <CardDescription className="mt-2">
               Sign in to manage your AI agents and models
             </CardDescription>
