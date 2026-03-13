@@ -12,6 +12,7 @@ import ragRoutes from "./rag/routes";
 import skillRoutes from "./skills/routes";
 import mcpRoutes from "./mcp/routes";
 import channelRoutes from "./channels/routes";
+import llmProviderRoutes from "./llm-providers/routes";
 
 const app = Fastify({ logger: true });
 
@@ -33,6 +34,7 @@ const start = async () => {
 
   // ── Routes ───────────────────────────────────────────────────────────────
   await app.register(authRoutes);
+  await app.register(llmProviderRoutes, { prefix: "/api/llm-providers" });
   await app.register(agentRoutes);
   await app.register(chatRoutes);
   await app.register(ragRoutes);

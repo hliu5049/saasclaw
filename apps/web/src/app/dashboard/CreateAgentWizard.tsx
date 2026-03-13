@@ -19,14 +19,6 @@ import { cn } from "@/lib/utils";
 
 const STEP_LABELS = ["基本信息", "知识库", "MCP 工具", "技能", "渠道"];
 
-const MODELS = [
-  { value: "anthropic/claude-opus-4-6",    label: "Claude Opus 4.6" },
-  { value: "anthropic/claude-sonnet-4-6",  label: "Claude Sonnet 4.6" },
-  { value: "anthropic/claude-haiku-4-5",   label: "Claude Haiku 4.5" },
-  { value: "openai/gpt-4o",                label: "GPT-4o" },
-  { value: "openai/gpt-4o-mini",           label: "GPT-4o Mini" },
-];
-
 const COLOR_OPTIONS = [
   { idx: 0, bg: "bg-blue-500",    ring: "ring-blue-500",    label: "蓝" },
   { idx: 1, bg: "bg-violet-500",  ring: "ring-violet-500",  label: "紫" },
@@ -44,6 +36,7 @@ const COLOR_OPTIONS = [
 
 interface McpServer { id: string; name: string; description?: string | null; icon?: string | null; endpoint: string; }
 interface Skill     { id: string; name: string; description?: string | null; icon?: string | null; version: string; }
+interface LlmProvider { id: string; name: string; provider: string; models: string[]; isDefault: boolean; enabled: boolean; }
 
 interface WecomConfig {
   corpId: string; corpSecret: string; agentId: string;
@@ -140,7 +133,26 @@ function SelectCard({
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
 
-function Step1Basic({ data, onChange }: { data: WizardData; onChange: (p: Partial<WizardData>) => void }) {
+function Step1Basic({ 
+  data, 
+  onChange, 
+  providers, 
+  loadingProviders 
+}: { 
+  data: WizardData; 
+  onChange: (p: Partial<WizardData>) => void;
+  providers: LlmProvider[];
+  loadingProviders: boolean;
+}) {
+  // Build model options from providers
+  const modelOptions = providers
+    .filter(p => p.enabled)
+    .flatMap(p => p.models.map(m => ({
+      value: `${p.provider.toLowerCase()}/${m}`,
+      label: `${m} (${p.name})`,
+      providerId: p.id,
+    })));
+
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
@@ -176,15 +188,26 @@ function Step1Basic({ data, onChange }: { data: WizardData; onChange: (p: Partia
 
       <div className="space-y-1.5">
         <Label className="text-gray-300">模型</Label>
-        <select
-          value={data.model}
-          onChange={e => onChange({ model: e.target.value })}
-          className="flex h-10 w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-50 focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          {MODELS.map(m => (
-            <option key={m.value} value={m.value}>{m.label}</option>
-          ))}
-        </select>
+        {loadingProviders ? (
+          <div className="flex items-center gap-2 rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            加载模型列表...
+          </div>
+        ) : modelOptions.length === 0 ? (
+          <div className="rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-500">
+            暂无可用模型，请先在模型管理中配置
+          </div>
+        ) : (
+          <select
+            value={data.model}
+            onChange={e => onChange({ model: e.target.value })}
+            className="flex h-10 w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-50 focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            {modelOptions.map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="space-y-1.5">
@@ -466,6 +489,7 @@ export default function CreateAgentWizard({
   const [data, setData] = useState<WizardData>(INITIAL_DATA);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [providers, setProviders] = useState<LlmProvider[]>([]);
   const [registryLoading, setRegistryLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState("");
@@ -478,9 +502,20 @@ export default function CreateAgentWizard({
     Promise.all([
       fetch("/api/proxy/api/mcp/servers").then(r => r.json()).catch(() => ({})),
       fetch("/api/proxy/api/skills").then(r => r.json()).catch(() => ({})),
-    ]).then(([mcp, sk]) => {
+      fetch("/api/proxy/llm-providers").then(r => r.json()).catch(() => []),
+    ]).then(([mcp, sk, llm]) => {
       setMcpServers((mcp as { data?: { servers: McpServer[] } }).data?.servers ?? []);
       setSkills((sk as { data?: { skills: Skill[] } }).data?.skills ?? []);
+      setProviders(Array.isArray(llm) ? llm : []);
+      
+      // Set default model from default provider
+      const defaultProvider = (Array.isArray(llm) ? llm : []).find((p: LlmProvider) => p.isDefault && p.enabled);
+      if (defaultProvider && defaultProvider.models.length > 0) {
+        setData(prev => ({ 
+          ...prev, 
+          model: `${defaultProvider.provider.toLowerCase()}/${defaultProvider.models[0]}` 
+        }));
+      }
     }).finally(() => setRegistryLoading(false));
   }, [open]);
 
@@ -600,7 +635,7 @@ export default function CreateAgentWizard({
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            {step === 1 && <Step1Basic data={data} onChange={patch} />}
+            {step === 1 && <Step1Basic data={data} onChange={patch} providers={providers} loadingProviders={registryLoading} />}
             {step === 2 && <Step2Rag data={data} onChange={patch} />}
             {step === 3 && <Step3Mcp data={data} onChange={patch} servers={mcpServers} loading={registryLoading} />}
             {step === 4 && <Step4Skills data={data} onChange={patch} skills={skills} loading={registryLoading} />}

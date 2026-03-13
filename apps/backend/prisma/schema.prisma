@@ -204,6 +204,30 @@ enum ChannelType {
   FEISHU
 }
 
+// ── LLM Provider 配置 ──────────────────────────────────────
+model LlmProvider {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  provider  ProviderType
+  apiKey    String       // 加密存储
+  baseUrl   String?      // 自定义endpoint（可选）
+  models    Json         @default("[]") // 可用模型列表 ["gpt-4", "gpt-3.5-turbo"]
+  isDefault Boolean      @default(false)
+  enabled   Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@map("llm_providers")
+}
+
+enum ProviderType {
+  ANTHROPIC
+  OPENAI
+  AZURE_OPENAI
+  GOOGLE
+  CUSTOM
+}
+
 // ── 会话记录 ───────────────────────────────────────────────
 model ChatSession {
   id          String   @id @default(cuid())

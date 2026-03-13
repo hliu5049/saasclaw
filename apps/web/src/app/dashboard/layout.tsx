@@ -10,6 +10,7 @@ import {
   Search,
   ChevronRight,
   Loader2,
+  Cpu,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import CreateAgentWizard from "./CreateAgentWizard";
@@ -140,7 +141,7 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [sideTab, setSideTab] = useState<"agents" | "settings">("agents");
+  const [sideTab, setSideTab] = useState<"agents" | "llm" | "settings">("agents");
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [search, setSearch] = useState("");
@@ -226,7 +227,20 @@ export default function DashboardLayout({
           icon={Bot}
           label="Agents"
           active={sideTab === "agents"}
-          onClick={() => setSideTab("agents")}
+          onClick={() => {
+            setSideTab("agents");
+            router.push("/dashboard");
+          }}
+        />
+        <SideNavItem
+          id="llm"
+          icon={Cpu}
+          label="模型管理"
+          active={sideTab === "llm"}
+          onClick={() => {
+            setSideTab("llm");
+            router.push("/dashboard/llm-providers");
+          }}
         />
         <SideNavItem
           id="settings"
