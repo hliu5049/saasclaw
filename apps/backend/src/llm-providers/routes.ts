@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
-import { prisma } from "../lib/prisma.js";
+import prisma from "../lib/prisma";
 
 const routes: FastifyPluginAsync = async (fastify) => {
   // 获取所有LLM Provider
