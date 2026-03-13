@@ -163,6 +163,15 @@ export class AgentService {
     // ── Steps 5-6: push config to gateway (non-fatal if gateway is offline) ──
 
     try {
+      // Look up LLM provider credentials for the agent's model
+      const providerName = agent.model.split("/")[0]; // e.g. "anthropic" from "anthropic/claude-opus-4-6"
+      const provider = await this.prisma.llmProvider.findFirst({
+        where: {
+          provider: { equals: providerName, mode: "insensitive" },
+          enabled: true,
+        },
+      });
+
       // For a newly created agent, directly create the config instead of getting non-existent config
       const newConfig: Record<string, unknown> = {
         agentId: agent.id,
@@ -180,6 +189,11 @@ export class AgentService {
           chunkSize: 512,
           chunkOverlap: 64,
         },
+        ...(provider && {
+          apiKey: provider.apiKey,
+          apiBaseUrl: provider.baseUrl,
+          apiKeys: { [providerName.toLowerCase()]: provider.apiKey },
+        }),
       };
 
       await client.configPatch(agent.id, newConfig);

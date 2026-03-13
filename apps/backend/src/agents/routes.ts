@@ -153,6 +153,48 @@ export default async function agentRoutes(app: FastifyInstance) {
         },
       });
 
+      // Push config changes to gateway (non-fatal)
+      try {
+        const pool = GatewayPool.getInstance();
+        const gwClient = pool.get(existing.gatewayId);
+        if (gwClient) {
+          const patch: Record<string, unknown> = {};
+          if (name !== undefined) patch.name = name;
+          if (model !== undefined) {
+            patch.model = model;
+            // Look up API key for the new provider
+            const providerName = model.split("/")[0];
+            const provider = await prisma.llmProvider.findFirst({
+              where: { provider: { equals: providerName, mode: "insensitive" }, enabled: true },
+            });
+            if (provider) {
+              patch.apiKey = provider.apiKey;
+              patch.apiBaseUrl = provider.baseUrl;
+              patch.apiKeys = { [providerName.toLowerCase()]: provider.apiKey };
+            }
+          }
+          if (soulMd !== undefined) {
+            patch.soulMd = soulMd;
+            // Also update workspace file
+            if (existing.workspacePath) {
+              const fs = await import("node:fs/promises");
+              const path = await import("node:path");
+              await fs.writeFile(path.join(existing.workspacePath, "SOUL.md"), soulMd, "utf8");
+            }
+          }
+          if (agentsMd !== undefined && existing.workspacePath) {
+            const fs = await import("node:fs/promises");
+            const path = await import("node:path");
+            await fs.writeFile(path.join(existing.workspacePath, "AGENTS.md"), agentsMd, "utf8");
+          }
+          if (Object.keys(patch).length > 0) {
+            await gwClient.configPatch(req.params.id, patch);
+          }
+        }
+      } catch (err) {
+        console.warn(`[AgentRoutes] gateway config sync skipped for ${req.params.id}:`, err);
+      }
+
       return { success: true, data: { agent: updated } };
     },
   );
