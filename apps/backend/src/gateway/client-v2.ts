@@ -128,6 +128,22 @@ export class GatewayClientV2 extends EventEmitter {
     this._rejectAllPending(new Error("GatewayClient destroyed"));
   }
 
+  /** Wait for authentication to complete, with timeout */
+  waitForAuth(timeoutMs = 15_000): Promise<void> {
+    if (this.authenticated) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.removeListener("authenticated", onAuth);
+        reject(new Error("Authentication timeout"));
+      }, timeoutMs);
+      const onAuth = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      this.once("authenticated", onAuth);
+    });
+  }
+
   /** Low-level RPC call */
   async call<T = unknown>(
     method: string,
@@ -135,7 +151,7 @@ export class GatewayClientV2 extends EventEmitter {
     timeout = this.rpcTimeout,
   ): Promise<T> {
     if (!this.authenticated && method !== "connect") {
-      throw new Error("Not authenticated - call connect() first");
+      await this.waitForAuth();
     }
 
     // Fail fast if WebSocket is not open
