@@ -200,13 +200,23 @@ export class GatewayClientV2 extends EventEmitter {
     return this.call("sessions.history", { sessionKey, ...opts });
   }
 
-  /** Update gateway configuration (JSON merge semantics) */
+  /** Update gateway configuration (JSON merge semantics).
+   *  Fetches the current config hash first, then sends a config.patch RPC
+   *  with the raw JSON5 string + baseHash. */
   async configPatch(patch: Record<string, unknown>): Promise<unknown> {
-    return this.call("config.patch", patch);
+    // Step 1: get current config hash
+    const current = (await this.call("config.get", {})) as { hash?: string };
+    const baseHash = current?.hash ?? "";
+
+    // Step 2: send patch with raw JSON5 string
+    return this.call("config.patch", {
+      raw: JSON.stringify(patch),
+      baseHash,
+    });
   }
 
   /** Get gateway configuration */
-  async configGet(): Promise<unknown> {
+  async configGet(): Promise<{ config: Record<string, unknown>; hash: string }> {
     return this.call("config.get", {});
   }
 
