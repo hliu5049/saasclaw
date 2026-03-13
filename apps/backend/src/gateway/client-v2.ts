@@ -263,7 +263,7 @@ export class GatewayClientV2 extends EventEmitter {
     const clientId = "cli";
     const clientMode = "cli";
     const role = "operator";
-    const scopes = ["operator.read", "operator.write"];
+    const scopes = ["operator.read", "operator.write", "operator.admin"];
     const publicKey = Buffer.from(this.keyPair.publicKey).toString("base64");
 
     // Build v2 signature payload: pipe-delimited fields
