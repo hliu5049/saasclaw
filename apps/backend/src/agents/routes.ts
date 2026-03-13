@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiResponse } from "@enterprise-openclaw/shared";
 import type { JwtPayload } from "../auth/routes";
-import { AgentService } from "./service";
+import { AgentService, buildGatewayProviderConfig } from "./service";
 import { GatewayPool } from "../gateway/pool";
 import prisma from "../lib/prisma";
 
@@ -173,12 +173,10 @@ export default async function agentRoutes(app: FastifyInstance) {
                 where: { provider: providerName.toUpperCase() as any, enabled: true },
               });
               if (provider) {
+                const modelId = model.includes("/") ? model.split("/")[1] : model;
                 gwPatch.models = {
                   providers: {
-                    [providerName.toLowerCase()]: {
-                      apiKey: provider.apiKey,
-                      ...(provider.baseUrl && { baseUrl: provider.baseUrl }),
-                    },
+                    [providerName.toLowerCase()]: buildGatewayProviderConfig(provider, modelId),
                   },
                 };
               }

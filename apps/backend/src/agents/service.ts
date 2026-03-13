@@ -23,6 +23,44 @@ interface ConfigGetResult {
   hash: string;
 }
 
+// ── Gateway provider config builder ────────────────────────────────────────
+
+/** Map ProviderType to gateway `api` field */
+const PROVIDER_API_MAP: Record<string, string> = {
+  anthropic: "anthropic-messages",
+  openai: "openai-completions",
+  azure_openai: "openai-completions",
+  google: "openai-completions",
+  custom: "openai-completions",
+};
+
+/**
+ * Build a gateway-compatible `models.providers.<name>` object
+ * from a DB LlmProvider record and the selected model ID.
+ */
+export function buildGatewayProviderConfig(
+  provider: { apiKey: string; baseUrl?: string | null; models?: unknown; provider: string },
+  modelId: string, // e.g. "MiniMax-M2.5" (part after "/")
+): Record<string, unknown> {
+  const providerKey = provider.provider.toLowerCase();
+  const api = PROVIDER_API_MAP[providerKey] ?? "openai-completions";
+
+  // Build models array — gateway expects [{ id, name }]
+  const dbModels = Array.isArray(provider.models) ? provider.models : [];
+  const models = dbModels.length > 0
+    ? dbModels.map((m: unknown) =>
+        typeof m === "string" ? { id: m, name: m } : m,
+      )
+    : [{ id: modelId, name: modelId }];
+
+  return {
+    apiKey: provider.apiKey,
+    api,
+    ...(provider.baseUrl && { baseUrl: provider.baseUrl }),
+    models,
+  };
+}
+
 // ── Markdown builders ──────────────────────────────────────────────────────
 
 function buildSoulMd(name: string, description: string | undefined): string {
@@ -182,12 +220,10 @@ export class AgentService {
       };
 
       if (provider) {
+        const modelId = agent.model.includes("/") ? agent.model.split("/")[1] : agent.model;
         gwConfig.models = {
           providers: {
-            [providerName.toLowerCase()]: {
-              apiKey: provider.apiKey,
-              ...(provider.baseUrl && { baseUrl: provider.baseUrl }),
-            },
+            [providerName.toLowerCase()]: buildGatewayProviderConfig(provider, modelId),
           },
         };
       }
