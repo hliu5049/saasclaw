@@ -172,31 +172,27 @@ export class AgentService {
           })
         : null;
 
-      // For a newly created agent, directly create the config instead of getting non-existent config
-      const newConfig: Record<string, unknown> = {
-        agentId: agent.id,
-        name: agent.name,
-        model: agent.model,
-        workspacePath,
-        soulMdPath: path.join(workspacePath, "SOUL.md"),
-        agentsMdPath: path.join(workspacePath, "AGENTS.md"),
-        identityMdPath: path.join(workspacePath, "IDENTITY.md"),
-        skillPaths: [path.join(skillsDir, "rag-search.md")],
-        rag: {
-          collectionName: "agents",
-          namespace: `agent-${agent.id}`,
-          embeddingModel: "text-embedding-3-small",
-          chunkSize: 512,
-          chunkOverlap: 64,
+      // Push provider API key + agent model config to gateway (JSON merge semantics)
+      const gwConfig: Record<string, unknown> = {
+        agents: {
+          defaults: {
+            model: { primary: agent.model },
+          },
         },
-        ...(provider && {
-          apiKey: provider.apiKey,
-          apiBaseUrl: provider.baseUrl,
-          apiKeys: { [providerName.toLowerCase()]: provider.apiKey },
-        }),
       };
 
-      await client.configPatch(agent.id, newConfig);
+      if (provider) {
+        gwConfig.models = {
+          providers: {
+            [providerName.toLowerCase()]: {
+              apiKey: provider.apiKey,
+              ...(provider.baseUrl && { baseUrl: provider.baseUrl }),
+            },
+          },
+        };
+      }
+
+      await client.configPatch(gwConfig);
     } catch (err) {
       // Gateway offline or RPC timeout — agent is persisted, config can be
       // pushed later when the gateway comes back online.

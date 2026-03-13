@@ -158,11 +158,14 @@ export default async function agentRoutes(app: FastifyInstance) {
         const pool = GatewayPool.getInstance();
         const gwClient = pool.get(existing.gatewayId);
         if (gwClient) {
-          const patch: Record<string, unknown> = {};
-          if (name !== undefined) patch.name = name;
+          const gwPatch: Record<string, unknown> = {};
+          let needsPush = false;
+
+          // Sync model + provider API key
           if (model !== undefined && model.includes("/")) {
-            patch.model = model;
-            // Look up API key for the new provider
+            gwPatch.agents = { defaults: { model: { primary: model } } };
+            needsPush = true;
+
             const providerName = model.split("/")[0];
             const validProviders = ["ANTHROPIC", "OPENAI", "AZURE_OPENAI", "GOOGLE", "CUSTOM"];
             if (validProviders.includes(providerName.toUpperCase())) {
@@ -170,28 +173,32 @@ export default async function agentRoutes(app: FastifyInstance) {
                 where: { provider: providerName.toUpperCase() as any, enabled: true },
               });
               if (provider) {
-                patch.apiKey = provider.apiKey;
-                patch.apiBaseUrl = provider.baseUrl;
-                patch.apiKeys = { [providerName.toLowerCase()]: provider.apiKey };
+                gwPatch.models = {
+                  providers: {
+                    [providerName.toLowerCase()]: {
+                      apiKey: provider.apiKey,
+                      ...(provider.baseUrl && { baseUrl: provider.baseUrl }),
+                    },
+                  },
+                };
               }
             }
           }
-          if (soulMd !== undefined) {
-            patch.soulMd = soulMd;
-            // Also update workspace file
-            if (existing.workspacePath) {
-              const fs = await import("node:fs/promises");
-              const path = await import("node:path");
-              await fs.writeFile(path.join(existing.workspacePath, "SOUL.md"), soulMd, "utf8");
-            }
+
+          // Update workspace files
+          if (soulMd !== undefined && existing.workspacePath) {
+            const fs = await import("node:fs/promises");
+            const pathMod = await import("node:path");
+            await fs.writeFile(pathMod.join(existing.workspacePath, "SOUL.md"), soulMd, "utf8");
           }
           if (agentsMd !== undefined && existing.workspacePath) {
             const fs = await import("node:fs/promises");
-            const path = await import("node:path");
-            await fs.writeFile(path.join(existing.workspacePath, "AGENTS.md"), agentsMd, "utf8");
+            const pathMod = await import("node:path");
+            await fs.writeFile(pathMod.join(existing.workspacePath, "AGENTS.md"), agentsMd, "utf8");
           }
-          if (Object.keys(patch).length > 0) {
-            await gwClient.configPatch(req.params.id, patch);
+
+          if (needsPush) {
+            await gwClient.configPatch(gwPatch);
           }
         }
       } catch (err) {

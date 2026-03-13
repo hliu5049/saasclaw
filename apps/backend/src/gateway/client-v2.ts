@@ -200,14 +200,14 @@ export class GatewayClientV2 extends EventEmitter {
     return this.call("sessions.history", { sessionKey, ...opts });
   }
 
-  /** Update agent configuration */
-  async configPatch(agentId: string, patch: Record<string, unknown>): Promise<unknown> {
-    return this.call("config.patch", { agentId, patch });
+  /** Update gateway configuration (JSON merge semantics) */
+  async configPatch(patch: Record<string, unknown>): Promise<unknown> {
+    return this.call("config.patch", patch);
   }
 
-  /** Get agent configuration */
-  async configGet(agentId: string): Promise<unknown> {
-    return this.call("config.get", { agentId });
+  /** Get gateway configuration */
+  async configGet(): Promise<unknown> {
+    return this.call("config.get", {});
   }
 
   // ── Socket lifecycle ───────────────────────────────────────────────────
