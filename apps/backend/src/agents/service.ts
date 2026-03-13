@@ -166,10 +166,7 @@ export class AgentService {
       // Look up LLM provider credentials for the agent's model
       const providerName = agent.model.split("/")[0]; // e.g. "anthropic" from "anthropic/claude-opus-4-6"
       const provider = await this.prisma.llmProvider.findFirst({
-        where: {
-          provider: { equals: providerName, mode: "insensitive" },
-          enabled: true,
-        },
+        where: { provider: providerName.toUpperCase() as any, enabled: true },
       });
 
       // For a newly created agent, directly create the config instead of getting non-existent config

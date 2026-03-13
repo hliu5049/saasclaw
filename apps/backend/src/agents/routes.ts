@@ -165,7 +165,7 @@ export default async function agentRoutes(app: FastifyInstance) {
             // Look up API key for the new provider
             const providerName = model.split("/")[0];
             const provider = await prisma.llmProvider.findFirst({
-              where: { provider: { equals: providerName, mode: "insensitive" }, enabled: true },
+              where: { provider: providerName.toUpperCase() as any, enabled: true },
             });
             if (provider) {
               patch.apiKey = provider.apiKey;
