@@ -181,8 +181,16 @@ export function AgentDetail() {
                         <SelectValue placeholder="Select a model" />
                       </SelectTrigger>
                       <SelectContent>
-                        {activeModels.flatMap((m) =>
-                          m.models.filter(Boolean).map((modelName) => (
+                        {activeModels.flatMap((m) => {
+                          const modelNames = m.models.filter(Boolean)
+                          if (modelNames.length === 0) {
+                            return [(
+                              <SelectItem key={m.id} value={`${m.provider.toLowerCase()}/${m.name}`}>
+                                {m.name}
+                              </SelectItem>
+                            )]
+                          }
+                          return modelNames.map((modelName) => (
                             <SelectItem
                               key={`${m.id}-${modelName}`}
                               value={`${m.provider.toLowerCase()}/${modelName}`}
@@ -190,7 +198,7 @@ export function AgentDetail() {
                               {m.name} - {modelName}
                             </SelectItem>
                           ))
-                        )}
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
