@@ -2,11 +2,25 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { 
+  Plus, 
+  Cpu, 
+  Edit, 
+  Trash2, 
+  Star, 
+  CheckCircle2, 
+  XCircle,
+  Sparkles,
+  Brain,
+  Zap
+} from "lucide-react";
 
 type ProviderType = "ANTHROPIC" | "OPENAI" | "AZURE_OPENAI" | "GOOGLE" | "CUSTOM";
 
@@ -29,6 +43,14 @@ const PROVIDER_LABELS: Record<ProviderType, string> = {
   CUSTOM: "Custom",
 };
 
+const PROVIDER_ICONS: Record<ProviderType, React.ReactNode> = {
+  ANTHROPIC: <Brain className="h-5 w-5" />,
+  OPENAI: <Sparkles className="h-5 w-5" />,
+  AZURE_OPENAI: <Cpu className="h-5 w-5" />,
+  GOOGLE: <Zap className="h-5 w-5" />,
+  CUSTOM: <Cpu className="h-5 w-5" />,
+};
+
 export default function LlmProvidersPage() {
   const [providers, setProviders] = useState<LlmProvider[]>([]);
   const [showDialog, setShowDialog] = useState(false);
@@ -48,9 +70,19 @@ export default function LlmProvidersPage() {
   }, []);
 
   const loadProviders = async () => {
-    const res = await fetch("/api/proxy/llm-providers");
-    const data = await res.json();
-    setProviders(data);
+    try {
+      const res = await fetch("/api/proxy/llm-providers");
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setProviders(data);
+      } else {
+        console.error("Invalid response format:", data);
+        setProviders([]);
+      }
+    } catch (error) {
+      console.error("Failed to load providers:", error);
+      setProviders([]);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -114,142 +146,243 @@ export default function LlmProvidersPage() {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">模型管理</h1>
-          <p className="text-gray-500 mt-1">配置和管理大语言模型提供商</p>
+    <div className="flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
+      <div className="container mx-auto p-8 max-w-7xl">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Cpu className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">模型管理</h1>
+              <p className="text-muted-foreground mt-1">配置和管理大语言模型提供商</p>
+            </div>
+          </div>
         </div>
-        <Button onClick={() => { resetForm(); setShowDialog(true); }}>
-          + 添加模型
-        </Button>
-      </div>
 
-      <div className="grid gap-4">
-        {providers.map((provider) => (
-          <Card key={provider.id} className="p-4">
-            <div className="flex justify-between items-start">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <h3 className="font-semibold text-lg">{provider.name}</h3>
-                  {provider.isDefault && <Badge>默认</Badge>}
-                  {!provider.enabled && <Badge variant="secondary">已禁用</Badge>}
-                </div>
-                <p className="text-sm text-gray-600 mb-2">
-                  {PROVIDER_LABELS[provider.provider]}
-                </p>
-                <div className="text-sm text-gray-500">
-                  <span className="font-medium">可用模型：</span>
-                  {provider.models.length > 0 ? provider.models.join(", ") : "未配置"}
-                </div>
+        {/* Add Button */}
+        <div className="mb-6">
+          <Button onClick={() => { resetForm(); setShowDialog(true); }} size="lg" className="gap-2">
+            <Plus className="h-4 w-4" />
+            添加模型提供商
+          </Button>
+        </div>
+
+        {/* Providers Grid */}
+        {!Array.isArray(providers) || providers.length === 0 ? (
+          <Card className="p-12">
+            <div className="text-center">
+              <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+                <Cpu className="h-8 w-8 text-muted-foreground" />
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => handleEdit(provider)}>
-                  编辑
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => handleDelete(provider.id)}>
-                  删除
-                </Button>
-              </div>
+              <h3 className="text-lg font-semibold mb-2">暂无模型配置</h3>
+              <p className="text-muted-foreground mb-4">开始添加您的第一个模型提供商</p>
+              <Button onClick={() => { resetForm(); setShowDialog(true); }} variant="outline">
+                <Plus className="h-4 w-4 mr-2" />
+                添加模型
+              </Button>
             </div>
           </Card>
-        ))}
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {providers.map((provider) => (
+              <Card key={provider.id} className="relative overflow-hidden hover:shadow-lg transition-shadow">
+                {provider.isDefault && (
+                  <div className="absolute top-0 right-0 bg-gradient-to-l from-yellow-500 to-yellow-600 text-white px-3 py-1 text-xs font-medium flex items-center gap-1">
+                    <Star className="h-3 w-3 fill-current" />
+                    默认
+                  </div>
+                )}
+                
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-primary/10 rounded-lg">
+                        {PROVIDER_ICONS[provider.provider]}
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{provider.name}</CardTitle>
+                        <CardDescription className="flex items-center gap-2 mt-1">
+                          {PROVIDER_LABELS[provider.provider]}
+                          {provider.enabled ? (
+                            <Badge variant="outline" className="gap-1 text-green-600 border-green-600">
+                              <CheckCircle2 className="h-3 w-3" />
+                              已启用
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="gap-1 text-gray-500 border-gray-500">
+                              <XCircle className="h-3 w-3" />
+                              已禁用
+                            </Badge>
+                          )}
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
 
-        {providers.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            暂无模型配置，点击"添加模型"开始配置
+                <CardContent>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground mb-2">可用模型</p>
+                      <div className="flex flex-wrap gap-1">
+                        {provider.models.length > 0 ? (
+                          provider.models.map((model, idx) => (
+                            <Badge key={idx} variant="secondary" className="text-xs">
+                              {model}
+                            </Badge>
+                          ))
+                        ) : (
+                          <span className="text-sm text-muted-foreground">未配置</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => handleEdit(provider)}
+                      >
+                        <Edit className="h-3 w-3 mr-1" />
+                        编辑
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => handleDelete(provider.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         )}
+
+        {/* Dialog */}
+        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{editingProvider ? "编辑模型提供商" : "添加模型提供商"}</DialogTitle>
+              <DialogDescription>
+                配置大语言模型的API密钥和可用模型列表
+              </DialogDescription>
+            </DialogHeader>
+            
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="name">名称</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="例如：OpenAI GPT-4"
+                    required
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="provider">提供商类型</Label>
+                  <Select
+                    value={formData.provider}
+                    onValueChange={(value) => setFormData({ ...formData, provider: value as ProviderType })}
+                  >
+                    <SelectTrigger id="provider">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(PROVIDER_LABELS).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="apiKey">API Key</Label>
+                  <Input
+                    id="apiKey"
+                    type="password"
+                    value={formData.apiKey}
+                    onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                    placeholder="sk-..."
+                    required
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="baseUrl">Base URL（可选）</Label>
+                  <Input
+                    id="baseUrl"
+                    value={formData.baseUrl}
+                    onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="models">可用模型（逗号分隔）</Label>
+                  <Input
+                    id="models"
+                    value={formData.models}
+                    onChange={(e) => setFormData({ ...formData, models: e.target.value })}
+                    placeholder="gpt-4, gpt-3.5-turbo"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    输入多个模型名称，用逗号分隔
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="isDefault">设为默认</Label>
+                    <p className="text-sm text-muted-foreground">
+                      创建新Agent时默认使用此提供商
+                    </p>
+                  </div>
+                  <Switch
+                    id="isDefault"
+                    checked={formData.isDefault}
+                    onCheckedChange={(checked) => setFormData({ ...formData, isDefault: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="enabled">启用</Label>
+                    <p className="text-sm text-muted-foreground">
+                      是否在Agent创建时显示此提供商
+                    </p>
+                  </div>
+                  <Switch
+                    id="enabled"
+                    checked={formData.enabled}
+                    onCheckedChange={(checked) => setFormData({ ...formData, enabled: checked })}
+                  />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowDialog(false)}>
+                  取消
+                </Button>
+                <Button type="submit">
+                  {editingProvider ? "保存更改" : "创建"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
-
-      <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{editingProvider ? "编辑模型" : "添加模型"}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label>名称</Label>
-              <Input
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="例如：OpenAI GPT-4"
-                required
-              />
-            </div>
-
-            <div>
-              <Label>提供商</Label>
-              <select
-                className="w-full border rounded px-3 py-2"
-                value={formData.provider}
-                onChange={(e) => setFormData({ ...formData, provider: e.target.value as ProviderType })}
-              >
-                {Object.entries(PROVIDER_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <Label>API Key</Label>
-              <Input
-                type="password"
-                value={formData.apiKey}
-                onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                placeholder="sk-..."
-                required
-              />
-            </div>
-
-            <div>
-              <Label>Base URL（可选）</Label>
-              <Input
-                value={formData.baseUrl}
-                onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
-                placeholder="https://api.openai.com/v1"
-              />
-            </div>
-
-            <div>
-              <Label>可用模型（逗号分隔）</Label>
-              <Input
-                value={formData.models}
-                onChange={(e) => setFormData({ ...formData, models: e.target.value })}
-                placeholder="gpt-4, gpt-3.5-turbo"
-              />
-            </div>
-
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={formData.isDefault}
-                  onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })}
-                />
-                设为默认
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={formData.enabled}
-                  onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                />
-                启用
-              </label>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setShowDialog(false)}>
-                取消
-              </Button>
-              <Button type="submit">
-                {editingProvider ? "保存" : "创建"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
