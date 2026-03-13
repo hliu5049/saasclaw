@@ -17,7 +17,9 @@ interface RpcRequest {
 interface RpcResponse {
   type: "res";
   id: string;
+  ok?: boolean;
   result?: unknown;
+  payload?: unknown;
   error?: { code: number | string; message: string };
 }
 
@@ -208,17 +210,14 @@ export class GatewayClientV2 extends EventEmitter {
     // Step 1: get current config hash
     const current = (await this.call("config.get", {})) as {
       hash?: string;
-      config?: unknown;
     };
     const baseHash = current?.hash;
+    if (!baseHash) {
+      throw new Error("config.get returned no hash — cannot patch");
+    }
     const raw = JSON.stringify(patch);
 
-    if (baseHash) {
-      // Existing config — use config.patch for partial merge
-      return this.call("config.patch", { raw, baseHash });
-    }
-    // No config yet — use config.apply (baseHash optional for initial config)
-    return this.call("config.apply", { raw });
+    return this.call("config.patch", { raw, baseHash });
   }
 
   /** Get gateway configuration */
@@ -391,7 +390,7 @@ export class GatewayClientV2 extends EventEmitter {
         Object.assign(new Error(msg.error.message), { code: msg.error.code }),
       );
     } else {
-      entry.resolve(msg.result);
+      entry.resolve(msg.payload ?? msg.result);
     }
   }
 
