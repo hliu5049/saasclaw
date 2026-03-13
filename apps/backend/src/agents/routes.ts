@@ -160,17 +160,20 @@ export default async function agentRoutes(app: FastifyInstance) {
         if (gwClient) {
           const patch: Record<string, unknown> = {};
           if (name !== undefined) patch.name = name;
-          if (model !== undefined) {
+          if (model !== undefined && model.includes("/")) {
             patch.model = model;
             // Look up API key for the new provider
             const providerName = model.split("/")[0];
-            const provider = await prisma.llmProvider.findFirst({
-              where: { provider: providerName.toUpperCase() as any, enabled: true },
-            });
-            if (provider) {
-              patch.apiKey = provider.apiKey;
-              patch.apiBaseUrl = provider.baseUrl;
-              patch.apiKeys = { [providerName.toLowerCase()]: provider.apiKey };
+            const validProviders = ["ANTHROPIC", "OPENAI", "AZURE_OPENAI", "GOOGLE", "CUSTOM"];
+            if (validProviders.includes(providerName.toUpperCase())) {
+              const provider = await prisma.llmProvider.findFirst({
+                where: { provider: providerName.toUpperCase() as any, enabled: true },
+              });
+              if (provider) {
+                patch.apiKey = provider.apiKey;
+                patch.apiBaseUrl = provider.baseUrl;
+                patch.apiKeys = { [providerName.toLowerCase()]: provider.apiKey };
+              }
             }
           }
           if (soulMd !== undefined) {

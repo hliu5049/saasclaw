@@ -152,11 +152,13 @@ export function Agents() {
                     <SelectValue placeholder="Select a model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {activeModels.map((model) => (
-                      <SelectItem key={model.id} value={`${model.provider.toLowerCase()}/${model.models[0]}`}>
-                        {model.name} - {model.models[0]}
-                      </SelectItem>
-                    ))}
+                    {activeModels.flatMap((m) =>
+                      m.models.filter(Boolean).map((modelName) => (
+                        <SelectItem key={`${m.id}-${modelName}`} value={`${m.provider.toLowerCase()}/${modelName}`}>
+                          {m.name} - {modelName}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
                 {activeModels.length === 0 && (
