@@ -43,7 +43,7 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const headers: HeadersInit = {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.body && typeof options.body === "string" ? { "Content-Type": "application/json" } : {}),
       ...options.headers,
     }
 
@@ -183,6 +183,42 @@ class ApiClient {
   async getAgent(id: string) {
     return this.request<{ success: boolean; data: { agent: any } }>(
       `/api/agents/${id}`
+    )
+  }
+
+  // Chat endpoints
+  async sendMessage(agentId: string, message: string) {
+    return this.request<{ success: boolean; data: { sessionKey: string; status: string } }>(
+      `/api/chat/${agentId}/send`,
+      { method: "POST", body: JSON.stringify({ message }) }
+    )
+  }
+
+  async getChatHistory(agentId: string) {
+    return this.request<{ success: boolean; data: { messages: any[] } }>(
+      `/api/chat/${agentId}/history`
+    )
+  }
+
+  async clearSession(agentId: string) {
+    return this.request<{ success: boolean; data: null }>(
+      `/api/chat/${agentId}/session`,
+      { method: "DELETE" }
+    )
+  }
+
+  getStreamUrl(agentId: string) {
+    const token = this.getToken()
+    return `${this.baseUrl}/api/chat/${agentId}/stream?token=${encodeURIComponent(token ?? "")}`
+  }
+
+  // RAG endpoints
+  async uploadDocument(agentId: string, file: File) {
+    const formData = new FormData()
+    formData.append("file", file)
+    return this.request<{ success: boolean; data: { doc: any } }>(
+      `/api/rag/${agentId}/documents`,
+      { method: "POST", body: formData }
     )
   }
 }
