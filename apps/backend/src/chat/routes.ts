@@ -175,6 +175,12 @@ export default async function chatRoutes(app: FastifyInstance) {
       reply.hijack();
 
       const raw = reply.raw;
+      // CORS headers must be set manually after hijack() since Fastify hooks are bypassed
+      const origin = req.headers.origin;
+      if (origin) {
+        raw.setHeader("Access-Control-Allow-Origin", origin);
+        raw.setHeader("Access-Control-Allow-Credentials", "true");
+      }
       raw.setHeader("Content-Type",    "text/event-stream");
       raw.setHeader("Cache-Control",   "no-cache");
       raw.setHeader("X-Accel-Buffering", "no");
