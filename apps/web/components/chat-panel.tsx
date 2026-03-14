@@ -69,19 +69,38 @@ export function ChatPanel({ agentId, agentName }: Props) {
 
     es.addEventListener("text", (e: MessageEvent) => {
       const data = JSON.parse(e.data)
-      const content: string = data.content ?? data.delta ?? data.text ?? ""
-      if (!content) return
+      // Gateway "agent" events: { stream, data: { text (full), delta (chunk) } }
+      // Gateway "chat" events:  { state: "delta", message: { text } | string }
+      const nested = data.data as Record<string, unknown> | undefined
+      const msg = data.message
+
+      // Prefer delta (incremental chunk) for append mode
+      const delta: string | undefined =
+        data.delta ?? nested?.delta ?? data.content ?? undefined
+      // Full accumulated text — used as replacement if no delta
+      const fullText: string | undefined =
+        nested?.text ?? data.text ??
+        (typeof msg === "string" ? msg : msg?.text ?? msg?.content ?? undefined)
+
+      const hasDelta = typeof delta === "string" && delta.length > 0
+      const hasFull  = typeof fullText === "string" && fullText.length > 0
+      if (!hasDelta && !hasFull) return
 
       setMessages(prev => {
         const streamId = streamingMsgIdRef.current
         if (streamId) {
-          return prev.map(m =>
-            m.id === streamId ? { ...m, content: m.content + content } : m
-          )
+          return prev.map(m => {
+            if (m.id !== streamId) return m
+            // If we have a delta, append it; otherwise replace with full text
+            return hasDelta
+              ? { ...m, content: m.content + delta }
+              : { ...m, content: fullText! }
+          })
         } else {
           const newId = `stream-${Date.now()}`
           streamingMsgIdRef.current = newId
-          return [...prev, { id: newId, role: "assistant", content, isStreaming: true }]
+          const initial = hasDelta ? delta! : fullText!
+          return [...prev, { id: newId, role: "assistant", content: initial, isStreaming: true }]
         }
       })
     })

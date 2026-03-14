@@ -12,10 +12,16 @@ function sessionKey(agentId: string, userId: string): string {
 
 /** Map a raw gateway payload to an SSE event name. */
 function sseEventName(ev: Record<string, unknown>): string {
-  if (ev.stream === "text")     return "text";
-  if (ev.stream === "thinking") return "thinking";
+  // "agent" events use stream field
+  if (ev.stream === "text")        return "text";
+  if (ev.stream === "thinking")    return "thinking";
+  if (ev.stream === "assistant")   return "text";
+  if (ev.stream === "lifecycle")   return "done";
   if (ev.type   === "agent_done")  return "done";
   if (ev.type   === "tool_start")  return "tool_start";
+  // "chat" events use state field
+  if (ev.state  === "delta")       return "text";
+  if (ev.state  === "final")       return "done";
   return "message";
 }
 

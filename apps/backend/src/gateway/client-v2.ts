@@ -404,7 +404,7 @@ export class GatewayClientV2 extends EventEmitter {
       const nonce = (msg.payload as Record<string, unknown>)?.nonce as string | undefined;
       console.log("[GatewayClient] Received connect.challenge, nonce:", nonce);
       this._sendConnect(nonce);
-    } else if (eventName === "agent") {
+    } else if (eventName === "agent" || eventName === "chat") {
       this.emit("agent-event", msg.payload);
     } else if (eventName === "tick" || eventName === "heartbeat") {
       // Respond to heartbeat
