@@ -90,25 +90,26 @@ export function ChatPanel({ agentId, agentName }: Props) {
 
       const hasDelta = typeof delta === "string" && delta.length > 0
       const hasFull  = typeof fullText === "string" && fullText.length > 0
-      console.log("[ChatPanel] extracted:", { delta, fullText, hasDelta, hasFull })
       if (!hasDelta && !hasFull) return
 
+      // Assign ID outside the updater so StrictMode double-invocation is safe
+      if (!streamingMsgIdRef.current) {
+        streamingMsgIdRef.current = `stream-${Date.now()}`
+      }
+      const streamId = streamingMsgIdRef.current
+
       setMessages(prev => {
-        const streamId = streamingMsgIdRef.current
-        console.log("[ChatPanel] setMessages called, streamId:", streamId, "prev.length:", prev.length)
-        if (streamId) {
+        const existing = prev.find(m => m.id === streamId)
+        if (existing) {
           return prev.map(m => {
             if (m.id !== streamId) return m
-            // If we have a delta, append it; otherwise replace with full text
             return hasDelta
               ? { ...m, content: m.content + delta }
               : { ...m, content: fullText! }
           })
         } else {
-          const newId = `stream-${Date.now()}`
-          streamingMsgIdRef.current = newId
           const initial = hasDelta ? delta! : fullText!
-          return [...prev, { id: newId, role: "assistant", content: initial, isStreaming: true }]
+          return [...prev, { id: streamId, role: "assistant", content: initial, isStreaming: true }]
         }
       })
     })
