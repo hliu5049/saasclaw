@@ -111,11 +111,13 @@ export default async function chatRoutes(app: FastifyInstance) {
       }
 
       const gwClient = GatewayPool.getInstance().get(agent.gatewayId);
+      console.log("[Chat] history: gwClient?", !!gwClient, "gatewayId:", agent.gatewayId);
       if (!gwClient) {
         return { success: true, data: { messages: [] } }; // gateway down = empty history
       }
 
       const key = sessionKey(agentId, userId);
+      console.log("[Chat] history: sessionKey:", key);
 
       try {
         const result = await gwClient.chatHistory(key, { limit });
@@ -123,7 +125,8 @@ export default async function chatRoutes(app: FastifyInstance) {
         // Normalise to { messages: Array<{ role, content, ts? }> }
         const messages = Array.isArray(result) ? result : (result as { messages?: unknown[] }).messages ?? [];
         return { success: true, data: { messages } };
-      } catch {
+      } catch (err) {
+        console.error("[Chat] history error:", err);
         return { success: true, data: { messages: [] } };
       }
     },
