@@ -90,10 +90,12 @@ export function ChatPanel({ agentId, agentName }: Props) {
 
       const hasDelta = typeof delta === "string" && delta.length > 0
       const hasFull  = typeof fullText === "string" && fullText.length > 0
+      console.log("[ChatPanel] extracted:", { delta, fullText, hasDelta, hasFull })
       if (!hasDelta && !hasFull) return
 
       setMessages(prev => {
         const streamId = streamingMsgIdRef.current
+        console.log("[ChatPanel] setMessages called, streamId:", streamId, "prev.length:", prev.length)
         if (streamId) {
           return prev.map(m => {
             if (m.id !== streamId) return m
