@@ -230,15 +230,28 @@ enum ProviderType {
 
 // ── 会话记录 ───────────────────────────────────────────────
 model ChatSession {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   agentId     String
-  agent       Agent    @relation(fields: [agentId], references: [id])
+  agent       Agent         @relation(fields: [agentId], references: [id])
   userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  channelType String   @default("webchat")
-  sessionKey  String   @unique // OpenClaw sessionKey
-  lastActive  DateTime @default(now())
-  createdAt   DateTime @default(now())
+  user        User          @relation(fields: [userId], references: [id])
+  channelType String        @default("webchat")
+  sessionKey  String        @unique // OpenClaw sessionKey
+  lastActive  DateTime      @default(now())
+  createdAt   DateTime      @default(now())
+  messages    ChatMessage[]
 
   @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String      // "user" | "assistant"
+  content   String
+  createdAt DateTime    @default(now())
+
+  @@index([sessionId, createdAt])
+  @@map("chat_messages")
 }

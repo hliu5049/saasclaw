@@ -25,6 +25,23 @@ function sseEventName(ev: Record<string, unknown>): string {
   return "message";
 }
 
+/** Extract final assistant text from a gateway "done" / "final" event payload. */
+function extractFinalText(ev: Record<string, unknown>): string | null {
+  // "chat" final event: { state: "final", message: { content: [{ type: "text", text }] } }
+  const msg = ev.message as Record<string, unknown> | undefined;
+  if (msg) {
+    const content = msg.content;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .filter((b: any) => b.type === "text" || b.text)
+        .map((b: any) => b.text ?? "")
+        .join("");
+    }
+  }
+  return null;
+}
+
 // ── Plugin ────────────────────────────────────────────────────────────────
 
 export default async function chatRoutes(app: FastifyInstance) {
@@ -66,10 +83,15 @@ export default async function chatRoutes(app: FastifyInstance) {
       const key = sessionKey(agentId, userId);
 
       // Upsert session record (touch lastActive on repeat calls)
-      await prisma.chatSession.upsert({
+      const session = await prisma.chatSession.upsert({
         where:  { sessionKey: key },
         create: { agentId, userId, channelType: "webchat", sessionKey: key },
         update: { lastActive: new Date() },
+      });
+
+      // Save user message to DB
+      await prisma.chatMessage.create({
+        data: { sessionId: session.id, role: "user", content: req.body.message },
       });
 
       try {
@@ -78,18 +100,17 @@ export default async function chatRoutes(app: FastifyInstance) {
       } catch (err) {
         const error = err as Error;
         app.log.error(`[Chat] Failed to send message to gateway: ${error.message}`);
-        
-        // Return a more helpful error message
+
         if (error.message.includes("timeout")) {
-          return reply.status(504).send({ 
-            success: false, 
-            error: "Gateway timeout - the AI agent may not be configured properly or the gateway is overloaded" 
+          return reply.status(504).send({
+            success: false,
+            error: "Gateway timeout - the AI agent may not be configured properly or the gateway is overloaded"
           });
         }
-        
-        return reply.status(500).send({ 
-          success: false, 
-          error: "Failed to send message to gateway" 
+
+        return reply.status(500).send({
+          success: false,
+          error: "Failed to send message to gateway"
         });
       }
     },
@@ -100,35 +121,25 @@ export default async function chatRoutes(app: FastifyInstance) {
   app.get<{ Params: { agentId: string }; Querystring: { limit?: number } }>(
     "/api/chat/:agentId/history",
     { preHandler: [app.authenticate] },
-    async (req, reply): Promise<ApiResponse> => {
+    async (req): Promise<ApiResponse> => {
       const { sub: userId } = req.user as JwtPayload;
       const { agentId }     = req.params;
       const limit           = Number(req.query.limit ?? 100);
 
-      const agent = await prisma.agent.findUnique({ where: { id: agentId } });
-      if (!agent || agent.status === "DELETED") {
-        return reply.status(404).send({ success: false, error: "Agent not found" });
-      }
-
-      const gwClient = GatewayPool.getInstance().get(agent.gatewayId);
-      console.log("[Chat] history: gwClient?", !!gwClient, "gatewayId:", agent.gatewayId);
-      if (!gwClient) {
-        return { success: true, data: { messages: [] } }; // gateway down = empty history
-      }
-
       const key = sessionKey(agentId, userId);
-      console.log("[Chat] history: sessionKey:", key);
-
-      try {
-        const result = await gwClient.chatHistory(key, { limit });
-        console.log("[Chat] history raw result:", JSON.stringify(result)?.substring(0, 500));
-        // Normalise to { messages: Array<{ role, content, ts? }> }
-        const messages = Array.isArray(result) ? result : (result as { messages?: unknown[] }).messages ?? [];
-        return { success: true, data: { messages } };
-      } catch (err) {
-        console.error("[Chat] history error:", err);
+      const session = await prisma.chatSession.findUnique({ where: { sessionKey: key } });
+      if (!session) {
         return { success: true, data: { messages: [] } };
       }
+
+      const rows = await prisma.chatMessage.findMany({
+        where:   { sessionId: session.id },
+        orderBy: { createdAt: "asc" },
+        take:    limit,
+        select:  { role: true, content: true, createdAt: true },
+      });
+
+      return { success: true, data: { messages: rows } };
     },
   );
 
@@ -142,6 +153,7 @@ export default async function chatRoutes(app: FastifyInstance) {
       const { agentId }     = req.params;
       const key             = sessionKey(agentId, userId);
 
+      // Cascade delete will also remove messages
       await prisma.chatSession.deleteMany({ where: { sessionKey: key } });
       return reply.status(200).send({ success: true, data: null });
     },
@@ -175,7 +187,6 @@ export default async function chatRoutes(app: FastifyInstance) {
       const key = sessionKey(agentId, payload.sub);
 
       // ── SSE headers ───────────────────────────────────────────────────────
-      // hijack() tells Fastify not to touch reply lifecycle after this point
       reply.hijack();
 
       const raw = reply.raw;
@@ -199,13 +210,32 @@ export default async function chatRoutes(app: FastifyInstance) {
         raw.write("event: ping\ndata: {}\n\n");
       }, 15_000);
 
-      // ── Gateway event → SSE frame ─────────────────────────────────────────
-      const pool    = GatewayPool.getInstance();
+      // ── Gateway event → SSE frame + persist assistant reply ─────────────
+      const pool = GatewayPool.getInstance();
+
       const handler = (ev: unknown) => {
         if (typeof ev !== "object" || ev === null) return;
         const event = ev as Record<string, unknown>;
         const name  = sseEventName(event);
+
+        // Forward to client
         raw.write(`event: ${name}\ndata: ${JSON.stringify(event)}\n\n`);
+
+        // When the assistant finishes, persist the full reply to DB
+        if (name === "done") {
+          const text = extractFinalText(event);
+          if (text) {
+            prisma.chatSession
+              .findUnique({ where: { sessionKey: key } })
+              .then((session) => {
+                if (!session) return;
+                return prisma.chatMessage.create({
+                  data: { sessionId: session.id, role: "assistant", content: text },
+                });
+              })
+              .catch((err) => console.error("[Chat] Failed to save assistant message:", err));
+          }
+        }
       };
 
       pool.subscribe(key, handler);
@@ -217,7 +247,6 @@ export default async function chatRoutes(app: FastifyInstance) {
         raw.end();
       };
 
-      // Keep the Fastify handler suspended; resolve only when client leaves
       await new Promise<void>((resolve) => {
         req.raw.once("close", () => { cleanup(); resolve(); });
       });
