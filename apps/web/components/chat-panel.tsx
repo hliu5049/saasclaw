@@ -64,10 +64,16 @@ export function ChatPanel({ agentId, agentName }: Props) {
   // SSE connection
   useEffect(() => {
     const url = api.getStreamUrl(agentId)
+    console.log("[ChatPanel] SSE connecting to:", url)
     const es = new EventSource(url)
     esRef.current = es
 
+    es.onopen = () => console.log("[ChatPanel] SSE connected")
+    // Debug: log ALL incoming SSE messages
+    es.onmessage = (e) => console.log("[ChatPanel] SSE onmessage:", e.data?.substring(0, 200))
+
     es.addEventListener("text", (e: MessageEvent) => {
+      console.log("[ChatPanel] SSE text event:", e.data?.substring(0, 200))
       const data = JSON.parse(e.data)
       // Gateway "agent" events: { stream, data: { text (full), delta (chunk) } }
       // Gateway "chat" events:  { state: "delta", message: { text } | string }
@@ -115,8 +121,8 @@ export function ChatPanel({ agentId, agentName }: Props) {
       streamingMsgIdRef.current = null
     })
 
-    es.onerror = () => {
-      // auto-reconnects
+    es.onerror = (err) => {
+      console.error("[ChatPanel] SSE error:", err, "readyState:", es.readyState)
     }
 
     return () => {
