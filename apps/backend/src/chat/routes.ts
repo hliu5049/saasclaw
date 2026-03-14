@@ -119,6 +119,7 @@ export default async function chatRoutes(app: FastifyInstance) {
 
       try {
         const result = await gwClient.chatHistory(key, { limit });
+        console.log("[Chat] history raw result:", JSON.stringify(result)?.substring(0, 500));
         // Normalise to { messages: Array<{ role, content, ts? }> }
         const messages = Array.isArray(result) ? result : (result as { messages?: unknown[] }).messages ?? [];
         return { success: true, data: { messages } };
